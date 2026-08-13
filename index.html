@@ -13306,6 +13306,8 @@
     const [menuByDate, setMenuByDate] = (0, import_react.useState)(buildSeedMenu);
     const [announcements, setAnnouncements] = (0, import_react.useState)(seedAnnouncements);
     const [notifOn, setNotifOn] = (0, import_react.useState)(true);
+    const [notifOpen, setNotifOpen] = (0, import_react.useState)(false);
+    const [readNotifIds, setReadNotifIds] = (0, import_react.useState)(() => /* @__PURE__ */ new Set());
     const [profile, setProfile] = (0, import_react.useState)({
       name: "\u9673\u96C5\u5A77",
       role: "\u5411\u65E5\u8475\u73ED\u30FB\u5C0E\u5E2B",
@@ -13313,6 +13315,39 @@
       school: "\u66F8\u8056\u5E7C\u7A1A\u5712"
     });
     const pendingCount = approvals.filter((a) => a.status === "pending").length;
+    const notifications = [
+      ...approvals.filter((a) => a.status === "pending").map((a) => ({
+        id: `approval-${a.id}`,
+        kind: "approval",
+        icon: APPROVAL_TYPE_ICON[a.type] || ClipboardCheck,
+        title: `${a.typeName}\u5F85\u5BE9\u6838`,
+        desc: `${a.applicant}\u30FB${a.summary}`,
+        date: a.date
+      })),
+      ...announcements.map((a) => ({
+        id: `announcement-${a.id}`,
+        kind: "announcement",
+        icon: Megaphone,
+        title: a.title,
+        desc: `\u5712\u6240\u516C\u544A\u30FB${a.tag}`,
+        date: a.date
+      }))
+    ];
+    const unreadCount = notifications.filter((n) => !readNotifIds.has(n.id)).length;
+    const markNotifRead = (id) => {
+      setReadNotifIds((prev) => {
+        if (prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.add(id);
+        return next;
+      });
+    };
+    const markAllNotifRead = () => setReadNotifIds(new Set(notifications.map((n) => n.id)));
+    const openNotification = (n) => {
+      markNotifRead(n.id);
+      setNotifOpen(false);
+      setTab(n.kind === "approval" ? "approval" : "home");
+    };
     return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { ...body, background: T.bg, minHeight: "100%", color: T.ink }, children: [
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("style", { children: `
         * { box-sizing: border-box; }
@@ -13334,7 +13369,7 @@
             boxShadow: "0 0 0 1px rgba(0,0,0,0.03)"
           },
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Header, { profile, notifOn, pendingCount }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Header, { profile, notifOn, unreadCount, onOpenNotifications: () => setNotifOpen(true) }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { flex: 1, overflowY: "auto", padding: "14px 16px 90px" }, children: [
               tab === "home" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
                 HomeTab,
@@ -13373,13 +13408,81 @@
               )
             ] }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(TabBar, { tab, setTab, pendingCount }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Toast, { text: toast })
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Toast, { text: toast }),
+            notifOpen && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Sheet, { title: "\u901A\u77E5", onClose: () => setNotifOpen(false), children: [
+              notifications.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { fontSize: 12.5, color: T.sub }, children: unreadCount > 0 ? `${unreadCount} \u5247\u672A\u8B80` : "\u5DF2\u5168\u90E8\u8B80\u53D6" }),
+                unreadCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                  "button",
+                  {
+                    onClick: markAllNotifRead,
+                    style: {
+                      ...heading,
+                      fontSize: 12.5,
+                      fontWeight: 700,
+                      color: T.accentDeep,
+                      background: "transparent",
+                      border: "none",
+                      cursor: "pointer"
+                    },
+                    children: "\u5168\u90E8\u6A19\u70BA\u5DF2\u8B80"
+                  }
+                )
+              ] }),
+              notifications.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(EmptyRow, { text: "\u76EE\u524D\u6C92\u6709\u65B0\u901A\u77E5" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "flex", flexDirection: "column", gap: 8 }, children: notifications.map((n) => {
+                const Icon = n.icon;
+                const unread = !readNotifIds.has(n.id);
+                return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+                  "button",
+                  {
+                    onClick: () => openNotification(n),
+                    style: {
+                      display: "flex",
+                      gap: 10,
+                      textAlign: "left",
+                      padding: "11px 12px",
+                      borderRadius: 12,
+                      border: `1px solid ${T.line}`,
+                      background: unread ? T.accentSoft : "#fff",
+                      cursor: "pointer"
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                        "div",
+                        {
+                          style: {
+                            width: 32,
+                            height: 32,
+                            borderRadius: 9,
+                            background: "#fff",
+                            color: T.accentDeep,
+                            display: "grid",
+                            placeItems: "center",
+                            flexShrink: 0
+                          },
+                          children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Icon, { size: 16 })
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { flex: 1, minWidth: 0 }, children: [
+                        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 6 }, children: [
+                          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { ...heading, fontWeight: 700, fontSize: 13.5 }, children: n.title }),
+                          unread && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { width: 6, height: 6, borderRadius: "50%", background: T.rose, flexShrink: 0 } })
+                        ] }),
+                        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 12.5, color: T.sub, marginTop: 2, lineHeight: 1.4 }, children: n.desc })
+                      ] }),
+                      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { fontSize: 11, color: T.faint, flexShrink: 0 }, children: n.date })
+                    ]
+                  },
+                  n.id
+                );
+              }) })
+            ] })
           ]
         }
       )
     ] });
   }
-  function Header({ profile, notifOn, pendingCount }) {
+  function Header({ profile, notifOn, unreadCount, onOpenNotifications }) {
     return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
       "div",
       {
@@ -13398,8 +13501,11 @@
           ] }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { position: "relative" }, children: [
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-              "div",
+              "button",
               {
+                onClick: onOpenNotifications,
+                title: "\u901A\u77E5",
+                "aria-label": "\u901A\u77E5",
                 style: {
                   width: 40,
                   height: 40,
@@ -13407,12 +13513,14 @@
                   background: T.accentSoft,
                   color: T.accentDeep,
                   display: "grid",
-                  placeItems: "center"
+                  placeItems: "center",
+                  border: "none",
+                  cursor: "pointer"
                 },
                 children: notifOn ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Bell, { size: 18 }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(BellOff, { size: 18 })
               }
             ),
-            pendingCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+            unreadCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
               "span",
               {
                 style: {
@@ -13429,9 +13537,10 @@
                   display: "grid",
                   placeItems: "center",
                   padding: "0 3px",
+                  pointerEvents: "none",
                   ...heading
                 },
-                children: pendingCount
+                children: unreadCount
               }
             )
           ] })
