@@ -13055,6 +13055,10 @@
     return cells;
   };
   var mdLabel = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
+  var parseIsoLocal = (s) => {
+    const [y, m, d] = s.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  };
   function buildSeedMenu() {
     const monday = mondayOf(/* @__PURE__ */ new Date());
     const dishes = [
@@ -13092,6 +13096,12 @@
     leave: { bg: T.rose, fg: "#fff", bd: T.rose },
     absent: { bg: T.faint, fg: T.ink, bd: T.faint }
   };
+  var MOOD_ORDER = ["good", "ok", "bad"];
+  var MOOD_LABEL = { good: "\u958B\u5FC3", ok: "\u666E\u901A", bad: "\u4E0D\u4F73" };
+  var MEAL_ORDER = ["good", "ok", "less"];
+  var MEAL_LABEL = { good: "\u5403\u5F97\u597D", ok: "\u666E\u901A", less: "\u5403\u5F97\u5C11" };
+  var NAP_ORDER = ["slept", "restless", "none"];
+  var NAP_LABEL = { slept: "\u6709\u5348\u7761", restless: "\u4E0D\u5B89\u7A69", none: "\u672A\u5348\u7761" };
   var APPROVAL_STATUS_LABEL = { pending: "\u5F85\u5BE9\u6838", approved: "\u5DF2\u6838\u51C6", rejected: "\u5DF2\u9000\u56DE" };
   var APPROVAL_TYPE_ICON = { leave: ClipboardCheck, purchase: Utensils, repair: AlertTriangle };
   var isOwnApproval = (a, account) => !!account && a.applicant.startsWith(account.name);
@@ -13120,6 +13130,27 @@
         children
       }
     );
+  }
+  function ChoiceGroup({ options, labels, value, onChange }) {
+    return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }, children: options.map((k) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      "button",
+      {
+        onClick: () => onChange(k),
+        style: {
+          ...heading,
+          fontWeight: 700,
+          fontSize: 12.5,
+          padding: "7px 14px",
+          borderRadius: 20,
+          cursor: "pointer",
+          border: `1px solid ${value === k ? T.accent : T.line}`,
+          background: value === k ? T.accentSoft : "transparent",
+          color: value === k ? T.accentDeep : T.sub
+        },
+        children: labels[k]
+      },
+      k
+    )) });
   }
   function IconBtn({ icon: Icon, onClick, title, tone = "ghost", size = 30, disabled }) {
     const tones = {
@@ -13340,6 +13371,30 @@
     const [classes, setClasses] = (0, import_react.useState)(seedClasses);
     const [studentsByClass, setStudentsByClass] = (0, import_react.useState)(seedStudents);
     const [attendance, setAttendance] = (0, import_react.useState)(buildSeedAttendance);
+    const [journals, setJournals] = (0, import_react.useState)({});
+    const [staffAttendance, setStaffAttendance] = (0, import_react.useState)({});
+    const staffCheckIn = (username) => {
+      const now = /* @__PURE__ */ new Date();
+      const time = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+      const key = isoDate(now);
+      setStaffAttendance((prev) => {
+        const userRec = prev[username] || {};
+        const dayRec = userRec[key] || {};
+        return { ...prev, [username]: { ...userRec, [key]: { ...dayRec, checkIn: time } } };
+      });
+      notify(`\u5DF2\u7C3D\u5230\u30FB${time}`);
+    };
+    const staffCheckOut = (username) => {
+      const now = /* @__PURE__ */ new Date();
+      const time = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+      const key = isoDate(now);
+      setStaffAttendance((prev) => {
+        const userRec = prev[username] || {};
+        const dayRec = userRec[key] || {};
+        return { ...prev, [username]: { ...userRec, [key]: { ...dayRec, checkOut: time } } };
+      });
+      notify(`\u5DF2\u7C3D\u9000\u30FB${time}`);
+    };
     const [approvals, setApprovals] = (0, import_react.useState)(seedApprovals);
     const [menuByDate, setMenuByDate] = (0, import_react.useState)(buildSeedMenu);
     const [announcements, setAnnouncements] = (0, import_react.useState)(seedAnnouncements);
@@ -13460,6 +13515,8 @@
                   setStudentsByClass,
                   attendance,
                   setAttendance,
+                  journals,
+                  setJournals,
                   notify
                 }
               ),
@@ -13477,7 +13534,10 @@
                   setNotifOn,
                   notify,
                   onLogout: handleLogout,
-                  onCredentialsChanged: updateSessionUsername
+                  onCredentialsChanged: updateSessionUsername,
+                  staffAttendance,
+                  onCheckIn: () => staffCheckIn(account.username),
+                  onCheckOut: () => staffCheckOut(account.username)
                 }
               )
             ] }),
@@ -14165,7 +14225,7 @@
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 14.5, lineHeight: 1.5 }, children: value })
     ] });
   }
-  function ClassTab({ role, myClassIds, classes, setClasses, studentsByClass, setStudentsByClass, attendance, setAttendance, notify }) {
+  function ClassTab({ role, myClassIds, classes, setClasses, studentsByClass, setStudentsByClass, attendance, setAttendance, journals, setJournals, notify }) {
     const isPrincipal = role === "principal";
     const myClassIdSet = myClassIds || [];
     const visibleClasses = isPrincipal ? classes : classes.filter((c) => myClassIdSet.includes(c.id));
@@ -14196,6 +14256,7 @@
     const isAttnToday = attnKey === todayKey;
     const isAttnFuture = attnKey > todayKey;
     const dayRecord = attendance[classId]?.[attnKey] || {};
+    const dayJournal = journals[classId]?.[attnKey] || {};
     const CLASS_ICON_CYCLE = ["sun", "sprout", "flower"];
     const addClass = () => {
       const name = newClassName.trim();
@@ -14256,12 +14317,20 @@
       });
     };
     const [noteFor, setNoteFor] = (0, import_react.useState)(null);
-    const [noteDraft, setNoteDraft] = (0, import_react.useState)({ status: "present", note: "" });
+    const [noteDraft, setNoteDraft] = (0, import_react.useState)({ status: "present", note: "", mood: "", meal: "", nap: "", journal: "" });
     const openNote = (s, e) => {
       e.stopPropagation();
       if (isAttnFuture) return;
       const rec = dayRecord[s.id];
-      setNoteDraft({ status: rec?.status || "present", note: rec?.note || "" });
+      const j = dayJournal[s.id];
+      setNoteDraft({
+        status: rec?.status || "present",
+        note: rec?.note || "",
+        mood: j?.mood || "",
+        meal: j?.meal || "",
+        nap: j?.nap || "",
+        journal: j?.note || ""
+      });
       setNoteFor(s.id);
     };
     const saveNote = () => {
@@ -14273,8 +14342,37 @@
           [classId]: { ...classRec, [attnKey]: { ...dayRec, [noteFor]: { status: noteDraft.status, note: noteDraft.note.trim() } } }
         };
       });
+      setJournals((prev) => {
+        const classRec = prev[classId] || {};
+        const dayRec = classRec[attnKey] || {};
+        return {
+          ...prev,
+          [classId]: {
+            ...classRec,
+            [attnKey]: {
+              ...dayRec,
+              [noteFor]: { mood: noteDraft.mood, meal: noteDraft.meal, nap: noteDraft.nap, note: noteDraft.journal.trim() }
+            }
+          }
+        };
+      });
       setNoteFor(null);
-      notify("\u5DF2\u66F4\u65B0\u51FA\u7F3A\u5E2D\u8A73\u60C5");
+      notify("\u5DF2\u66F4\u65B0\u6BCF\u65E5\u7D00\u9304");
+    };
+    const [journalHistoryFor, setJournalHistoryFor] = (0, import_react.useState)(null);
+    const [journalSearch, setJournalSearch] = (0, import_react.useState)("");
+    const openJournalHistory = (s) => {
+      setSelectedStudentId(null);
+      setJournalSearch("");
+      setJournalHistoryFor(s.id);
+    };
+    const journalEntriesFor = (studentId) => {
+      const classJournals = journals[classId] || {};
+      return Object.entries(classJournals).map(([date, dayMap]) => ({ date, entry: dayMap[studentId] })).filter(({ entry }) => entry && (entry.mood || entry.meal || entry.nap || entry.note)).sort((a, b) => a.date < b.date ? 1 : -1);
+    };
+    const jumpToJournalDate = (dateStr) => {
+      setAttnDate(parseIsoLocal(dateStr));
+      setJournalHistoryFor(null);
     };
     const openStudent = (s) => {
       setSelectedStudentId(s.id);
@@ -14482,6 +14580,8 @@
             const rec = dayRecord[s.id];
             const st = rec?.status;
             const sc = st ? STATUS_COLOR[st] : { bg: "transparent", fg: T.faint, bd: T.line };
+            const j = dayJournal[s.id];
+            const hasJournal = !!(j && (j.mood || j.meal || j.nap || j.note));
             return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
               "div",
               {
@@ -14517,7 +14617,8 @@
                   /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { flex: 1, minWidth: 0 }, children: [
                     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 6 }, children: [
                       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { fontWeight: 600, fontSize: 14.5 }, children: s.name }),
-                      s.allergy && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AlertTriangle, { size: 13, color: T.rose, title: `\u904E\u654F\uFF1A${s.allergy}` })
+                      s.allergy && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AlertTriangle, { size: 13, color: T.rose, title: `\u904E\u654F\uFF1A${s.allergy}` }),
+                      hasJournal && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Tag, { bg: T.accentSoft, fg: T.accentDeep, children: "\u65E5\u8A8C" })
                     ] }),
                     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 12, color: T.sub, marginTop: 1 }, children: [
                       s.dob,
@@ -14536,7 +14637,7 @@
                       tone: "ghost",
                       disabled: isAttnFuture,
                       onClick: (e) => openNote(s, e),
-                      title: "\u8A18\u9304\u534A\u5929\u5230\u73ED\uFF0F\u6642\u9593\u5099\u8A3B"
+                      title: "\u51FA\u7F3A\u5E2D\u8A73\u60C5\uFF0F\u6BCF\u65E5\u65E5\u8A8C"
                     }
                   ),
                   /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
@@ -14663,7 +14764,7 @@
       noteFor && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
         Sheet,
         {
-          title: `${students.find((s) => s.id === noteFor)?.name || ""}\u30FB${mdLabel(attnDate)} \u51FA\u7F3A\u5E2D\u8A73\u60C5`,
+          title: `${students.find((s) => s.id === noteFor)?.name || ""}\u30FB${mdLabel(attnDate)} \u6BCF\u65E5\u7D00\u9304`,
           onClose: () => setNoteFor(null),
           children: [
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...heading, fontSize: 12, fontWeight: 600, color: T.sub, marginBottom: 8 }, children: "\u51FA\u7F3A\u5E2D\u72C0\u614B" }),
@@ -14689,10 +14790,28 @@
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
               Field,
               {
-                label: "\u5099\u8A3B\uFF08\u4F8B\u5982\uFF1A\u4E0B\u5348 2 \u9EDE\u5230\u73ED\u3001\u53EA\u4E0A\u534A\u5929\u4E2D\u5348\u63A5\u56DE\uFF09",
+                label: "\u51FA\u7F3A\u5E2D\u5099\u8A3B\uFF08\u4F8B\u5982\uFF1A\u4E0B\u5348 2 \u9EDE\u5230\u73ED\u3001\u53EA\u4E0A\u534A\u5929\u4E2D\u5348\u63A5\u56DE\uFF09",
                 value: noteDraft.note,
                 onChange: (v) => setNoteDraft({ ...noteDraft, note: v }),
                 placeholder: "\u53EF\u586B\u5BEB\u5BE6\u969B\u5230\uFF0F\u96E2\u5712\u6642\u9593\u6216\u534A\u5929\u539F\u56E0",
+                textarea: true
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { height: 1, background: T.line, margin: "6px 0 16px" } }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionTitle, { children: "\u4ECA\u65E5\u65E5\u8A8C" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...heading, fontSize: 12, fontWeight: 600, color: T.sub, marginBottom: 8 }, children: "\u7CBE\u795E\u72C0\u614B" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChoiceGroup, { options: MOOD_ORDER, labels: MOOD_LABEL, value: noteDraft.mood, onChange: (v) => setNoteDraft({ ...noteDraft, mood: v }) }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...heading, fontSize: 12, fontWeight: 600, color: T.sub, marginBottom: 8 }, children: "\u7528\u9910\u72C0\u6CC1" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChoiceGroup, { options: MEAL_ORDER, labels: MEAL_LABEL, value: noteDraft.meal, onChange: (v) => setNoteDraft({ ...noteDraft, meal: v }) }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...heading, fontSize: 12, fontWeight: 600, color: T.sub, marginBottom: 8 }, children: "\u5348\u7761\u72C0\u6CC1" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChoiceGroup, { options: NAP_ORDER, labels: NAP_LABEL, value: noteDraft.nap, onChange: (v) => setNoteDraft({ ...noteDraft, nap: v }) }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+              Field,
+              {
+                label: "\u65E5\u8A8C\u5167\u5BB9",
+                value: noteDraft.journal,
+                onChange: (v) => setNoteDraft({ ...noteDraft, journal: v }),
+                placeholder: "\u4ECA\u5929\u7684\u6D3B\u52D5\u3001\u72C0\u6CC1\u6216\u60F3\u8B93\u5BB6\u9577\u77E5\u9053\u7684\u4E8B",
                 textarea: true
               }
             ),
@@ -14706,10 +14825,62 @@
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u904E\u654F\u539F\uFF08\u7121\u5247\u7559\u7A7A\uFF09", value: studentDraft.allergy, onChange: (v) => setStudentDraft({ ...studentDraft, allergy: v }), placeholder: "\u4F8B\u5982\uFF1A\u82B1\u751F\u3001\u86CB\u985E\u88FD\u54C1" }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u5065\u5EB7 / \u7528\u85E5\u5099\u8A3B", value: studentDraft.medical, onChange: (v) => setStudentDraft({ ...studentDraft, medical: v }), textarea: true }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u7DCA\u6025\u806F\u7D61\u4EBA", value: studentDraft.emergency, onChange: (v) => setStudentDraft({ ...studentDraft, emergency: v }), placeholder: "\u59D3\u540D\uFF08\u95DC\u4FC2\uFF09\u96FB\u8A71" }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 10, marginTop: 4 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: () => openJournalHistory(studentDraft), icon: CalendarIcon, full: true, children: "\u67E5\u770B\u65E5\u8A8C\u7D00\u9304" }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 10, marginTop: 10 }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: saveStudent, icon: Save, full: true, children: "\u5132\u5B58\u8B8A\u66F4" }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconBtn, { icon: Trash2, tone: "danger", size: 44, onClick: removeStudent, title: "\u79FB\u9664\u5E7C\u5152" })
         ] })
+      ] }),
+      journalHistoryFor && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Sheet, { title: `${students.find((s) => s.id === journalHistoryFor)?.name || ""}\u30FB\u65E5\u8A8C\u7D00\u9304`, onClose: () => setJournalHistoryFor(null), wide: true, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+          Field,
+          {
+            label: "\u641C\u5C0B\u65E5\u8A8C\u5167\u5BB9",
+            value: journalSearch,
+            onChange: setJournalSearch,
+            placeholder: "\u8F38\u5165\u95DC\u9375\u5B57\u641C\u5C0B\uFF08\u4F8B\u5982\uFF1A\u611F\u5192\u3001\u7A4D\u6728\uFF09"
+          }
+        ),
+        (() => {
+          const all = journalEntriesFor(journalHistoryFor);
+          const kw = journalSearch.trim();
+          const list = kw ? all.filter(({ entry }) => (entry.note || "").includes(kw)) : all;
+          if (all.length === 0) {
+            return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(EmptyRow, { text: "\u9019\u4F4D\u5E7C\u5152\u76EE\u524D\u9084\u6C92\u6709\u65E5\u8A8C\u7D00\u9304" });
+          }
+          if (list.length === 0) {
+            return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(EmptyRow, { text: "\u6C92\u6709\u7B26\u5408\u641C\u5C0B\u95DC\u9375\u5B57\u7684\u65E5\u8A8C" });
+          }
+          return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "flex", flexDirection: "column", gap: 10 }, children: list.map(({ date, entry }) => {
+            const d = parseIsoLocal(date);
+            const isToday = date === todayKey;
+            return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+              SectionCard,
+              {
+                style: { padding: "12px 14px", cursor: "pointer" },
+                children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { onClick: () => jumpToJournalDate(date), children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }, children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { style: { ...heading, fontWeight: 700, fontSize: 13.5 }, children: [
+                      d.getFullYear(),
+                      "/",
+                      mdLabel(d),
+                      " ",
+                      WEEKDAY_LABELS[(d.getDay() + 6) % 7]
+                    ] }),
+                    isToday && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Tag, { children: "\u4ECA\u5929" })
+                  ] }),
+                  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: entry.note ? 8 : 0 }, children: [
+                    entry.mood && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Tag, { bg: T.accentSoft, fg: T.accentDeep, children: MOOD_LABEL[entry.mood] }),
+                    entry.meal && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Tag, { bg: T.amberSoft, fg: T.amber, children: MEAL_LABEL[entry.meal] }),
+                    entry.nap && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Tag, { bg: T.roseSoft, fg: T.roseDeep, children: NAP_LABEL[entry.nap] })
+                  ] }),
+                  entry.note && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 13.5, lineHeight: 1.5 }, children: entry.note })
+                ] })
+              },
+              date
+            );
+          }) });
+        })()
       ] }),
       addOpen && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Sheet, { title: "\u65B0\u589E\u5E7C\u5152", onClose: () => setAddOpen(false), children: [
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u59D3\u540D", value: newStudent.name, onChange: (v) => setNewStudent({ ...newStudent, name: v }), placeholder: "\u5E7C\u5152\u59D3\u540D" }),
@@ -14933,12 +15104,16 @@
       ] })
     ] });
   }
-  function MeTab({ account, accounts, setAccounts, classes, schoolName, setSchoolName, notifOn, setNotifOn, notify, onLogout, onCredentialsChanged }) {
+  function MeTab({ account, accounts, setAccounts, classes, schoolName, setSchoolName, notifOn, setNotifOn, notify, onLogout, onCredentialsChanged, staffAttendance, onCheckIn, onCheckOut }) {
     const isPrincipal = account.role === "principal";
     const myClassNames = classNamesFor(account.classIds, classes);
     const roleLine = isPrincipal ? ROLE_LABEL.principal : myClassNames.length ? `${myClassNames.join("\u3001")}\u30FB${ROLE_LABEL.teacher}` : ROLE_LABEL.teacher;
     const [editing, setEditing] = (0, import_react.useState)(false);
     const [draft, setDraft] = (0, import_react.useState)({ name: account.name, phone: account.phone });
+    const todayKey = isoDate(/* @__PURE__ */ new Date());
+    const myTodayRec = staffAttendance[account.username]?.[todayKey];
+    const [historyFor, setHistoryFor] = (0, import_react.useState)(null);
+    const staffHistoryFor = (username) => Object.entries(staffAttendance[username] || {}).filter(([, rec]) => rec.checkIn || rec.checkOut).sort(([a], [b]) => a < b ? 1 : -1);
     const save = () => {
       if (!draft.name.trim()) return notify("\u59D3\u540D\u4E0D\u53EF\u7A7A\u767D");
       setAccounts((prev) => prev.map((a) => a.username === account.username ? { ...a, name: draft.name.trim(), phone: draft.phone } : a));
@@ -15126,6 +15301,78 @@
         /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(SectionCard, { style: { overflow: "hidden", marginBottom: 16 }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(InfoRow, { icon: Phone, label: "\u806F\u7D61\u96FB\u8A71", value: account.phone || "\u672A\u8A2D\u5B9A" }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(InfoRow, { icon: Users, label: "\u6240\u5C6C\u73ED\u7D1A", value: myClassNames.join("\u3001") || (isPrincipal ? "\u5168\u5712" : "\u672A\u5206\u914D"), last: true })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionTitle, { children: "\u672C\u65E5\u7C3D\u5230" }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(SectionCard, { style: { padding: "14px", marginBottom: 20 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 16 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 11.5, color: T.sub, marginBottom: 3 }, children: "\u7C3D\u5230\u6642\u9593" }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...heading, fontWeight: 700, fontSize: 16, color: myTodayRec?.checkIn ? T.accentDeep : T.faint }, children: myTodayRec?.checkIn || "\u5C1A\u672A\u7C3D\u5230" })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 11.5, color: T.sub, marginBottom: 3 }, children: "\u7C3D\u9000\u6642\u9593" }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...heading, fontWeight: 700, fontSize: 16, color: myTodayRec?.checkOut ? T.accentDeep : T.faint }, children: myTodayRec?.checkOut || "\u5C1A\u672A\u7C3D\u9000" })
+            ] })
+          ] }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 8 }, children: [
+            !myTodayRec?.checkIn ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: onCheckIn, icon: Check, full: true, children: "\u7C3D\u5230" }) : !myTodayRec?.checkOut ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: onCheckOut, tone: "rose", icon: Check, full: true, children: "\u7C3D\u9000" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: () => {
+            }, full: true, children: "\u4ECA\u65E5\u5DF2\u5B8C\u6210\u7C3D\u5230\u7C3D\u9000" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconBtn, { icon: CalendarIcon, tone: "line", size: 44, onClick: () => setHistoryFor(account.username), title: "\u67E5\u770B\u6211\u7684\u7C3D\u5230\u7D00\u9304" })
+          ] })
+        ] }),
+        isPrincipal && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionTitle, { children: "\u6559\u8077\u54E1\u7C3D\u5230\u7E3D\u89BD" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionCard, { style: { overflow: "hidden", marginBottom: 20 }, children: accounts.map((a, i) => {
+            const rec = staffAttendance[a.username]?.[todayKey];
+            return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+              "div",
+              {
+                onClick: () => setHistoryFor(a.username),
+                style: {
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "12px 14px",
+                  borderTop: i === 0 ? "none" : `1px solid ${T.line}`,
+                  cursor: "pointer"
+                },
+                children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                    "div",
+                    {
+                      style: {
+                        width: 30,
+                        height: 30,
+                        borderRadius: "50%",
+                        background: T.accentSoft,
+                        color: T.accentDeep,
+                        display: "grid",
+                        placeItems: "center",
+                        ...heading,
+                        fontWeight: 700,
+                        fontSize: 13,
+                        flexShrink: 0
+                      },
+                      children: a.name.slice(-1)
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { flex: 1, minWidth: 0 }, children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontWeight: 600, fontSize: 14 }, children: a.name }),
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 11.5, color: T.sub, marginTop: 1 }, children: ROLE_LABEL[a.role] })
+                  ] }),
+                  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { textAlign: "right" }, children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 12.5, color: rec?.checkIn ? T.accentDeep : T.faint, ...heading, fontWeight: 700 }, children: rec?.checkIn || "\u672A\u7C3D\u5230" }),
+                    rec?.checkOut && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 11, color: T.sub, marginTop: 1 }, children: [
+                      "\u7C3D\u9000 ",
+                      rec.checkOut
+                    ] })
+                  ] }),
+                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChevronRight, { size: 15, color: T.faint })
+                ]
+              },
+              a.username
+            );
+          }) })
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionTitle, { children: "\u767B\u5165\u5E33\u5BC6" }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionCard, { style: { overflow: "hidden", marginBottom: 20 }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 14px" }, children: [
@@ -15376,7 +15623,32 @@
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: saveCredentials, icon: Save, full: true, children: "\u5132\u5B58" }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: () => setCredOpen(false), full: true, children: "\u53D6\u6D88" })
         ] })
-      ] })
+      ] }),
+      historyFor && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Sheet, { title: `${accounts.find((a) => a.username === historyFor)?.name || ""}\u30FB\u7C3D\u5230\u7D00\u9304`, onClose: () => setHistoryFor(null), children: (() => {
+        const list = staffHistoryFor(historyFor);
+        if (list.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(EmptyRow, { text: "\u9084\u6C92\u6709\u7C3D\u5230\u7D00\u9304" });
+        return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "flex", flexDirection: "column", gap: 8 }, children: list.map(([date, rec]) => {
+          const d = parseIsoLocal(date);
+          const isToday = date === todayKey;
+          return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionCard, { style: { padding: "11px 14px" }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { style: { ...heading, fontWeight: 700, fontSize: 13.5 }, children: [
+                d.getFullYear(),
+                "/",
+                mdLabel(d),
+                " ",
+                WEEKDAY_LABELS[(d.getDay() + 6) % 7]
+              ] }),
+              isToday && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Tag, { children: "\u4ECA\u5929" })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 12.5, color: T.sub }, children: [
+              rec.checkIn || "\u2014",
+              " \uFF5E ",
+              rec.checkOut || "\u2014"
+            ] })
+          ] }) }, date);
+        }) });
+      })() })
     ] });
   }
   function InfoRow({ icon: Icon, label, value, last }) {
