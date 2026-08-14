@@ -12956,6 +12956,13 @@
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("path", { d: "M7.2 16.3h2M11 16.3h2" })
     ] })
   );
+  var Download = makeIcon(
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("path", { d: "M12 3.5v11.5" }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("path", { d: "M7.5 11 12 15.5 16.5 11" }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("path", { d: "M4.5 16.5v2a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-2" })
+    ] })
+  );
   var T = {
     bg: "#f3f2f0",
     paper: "#fffdfa",
@@ -13106,6 +13113,26 @@
   var APPROVAL_TYPE_ICON = { leave: ClipboardCheck, purchase: Utensils, repair: AlertTriangle };
   var isOwnApproval = (a, account) => !!account && a.applicant.startsWith(account.name);
   var classNamesFor = (classIds, classes) => (classIds || []).map((id) => classes.find((c) => c.id === id)?.name).filter(Boolean);
+  function csvEscape(v) {
+    const s = String(v ?? "");
+    if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }
+  function toCSV(rows) {
+    return rows.map((row) => row.map(csvEscape).join(",")).join("\r\n");
+  }
+  function downloadCSV(filename, rows) {
+    const csv = "\uFEFF" + toCSV(rows);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
   var TAG_COLOR = {
     \u5168\u5712: { bg: T.accentSoft, fg: T.accentDeep },
     \u885B\u751F: { bg: T.amberSoft, fg: T.amber },
@@ -13537,7 +13564,10 @@
                   onCredentialsChanged: updateSessionUsername,
                   staffAttendance,
                   onCheckIn: () => staffCheckIn(account.username),
-                  onCheckOut: () => staffCheckOut(account.username)
+                  onCheckOut: () => staffCheckOut(account.username),
+                  studentsByClass,
+                  attendance,
+                  journals
                 }
               )
             ] }),
@@ -15104,7 +15134,7 @@
       ] })
     ] });
   }
-  function MeTab({ account, accounts, setAccounts, classes, schoolName, setSchoolName, notifOn, setNotifOn, notify, onLogout, onCredentialsChanged, staffAttendance, onCheckIn, onCheckOut }) {
+  function MeTab({ account, accounts, setAccounts, classes, schoolName, setSchoolName, notifOn, setNotifOn, notify, onLogout, onCredentialsChanged, staffAttendance, onCheckIn, onCheckOut, studentsByClass, attendance, journals }) {
     const isPrincipal = account.role === "principal";
     const myClassNames = classNamesFor(account.classIds, classes);
     const roleLine = isPrincipal ? ROLE_LABEL.principal : myClassNames.length ? `${myClassNames.join("\u3001")}\u30FB${ROLE_LABEL.teacher}` : ROLE_LABEL.teacher;
@@ -15114,6 +15144,57 @@
     const myTodayRec = staffAttendance[account.username]?.[todayKey];
     const [historyFor, setHistoryFor] = (0, import_react.useState)(null);
     const staffHistoryFor = (username) => Object.entries(staffAttendance[username] || {}).filter(([, rec]) => rec.checkIn || rec.checkOut).sort(([a], [b]) => a < b ? 1 : -1);
+    const exportStaffAttendance = () => {
+      const rows = [["\u59D3\u540D", "\u89D2\u8272", "\u5E33\u865F", "\u65E5\u671F", "\u7C3D\u5230\u6642\u9593", "\u7C3D\u9000\u6642\u9593"]];
+      accounts.forEach((a) => {
+        const recs = staffAttendance[a.username] || {};
+        const dates = Object.keys(recs).sort();
+        if (dates.length === 0) {
+          rows.push([a.name, ROLE_LABEL[a.role], a.username, "", "", ""]);
+        } else {
+          dates.forEach((d) => {
+            rows.push([a.name, ROLE_LABEL[a.role], a.username, d, recs[d].checkIn || "", recs[d].checkOut || ""]);
+          });
+        }
+      });
+      downloadCSV(`\u6559\u8077\u54E1\u7C3D\u5230\u7D00\u9304_${isoDate(/* @__PURE__ */ new Date())}.csv`, rows);
+      notify("\u5DF2\u532F\u51FA\u6559\u8077\u54E1\u7C3D\u5230\u8868");
+    };
+    const exportStudentsData = () => {
+      const rows = [
+        ["\u73ED\u7D1A", "\u59D3\u540D", "\u51FA\u751F\u5E74\u6708", "\u904E\u654F\u539F", "\u5065\u5EB7\u5099\u8A3B", "\u7DCA\u6025\u806F\u7D61\u4EBA", "\u65E5\u671F", "\u51FA\u7F3A\u5E2D\u72C0\u614B", "\u51FA\u7F3A\u5E2D\u5099\u8A3B", "\u5FC3\u60C5", "\u7528\u9910\u72C0\u6CC1", "\u5348\u7761\u72C0\u6CC1", "\u65E5\u8A8C\u5167\u5BB9"]
+      ];
+      classes.forEach((c) => {
+        const list = studentsByClass[c.id] || [];
+        const classAttendance = attendance[c.id] || {};
+        const classJournals = journals[c.id] || {};
+        const dates = Array.from(/* @__PURE__ */ new Set([...Object.keys(classAttendance), ...Object.keys(classJournals)])).sort();
+        list.forEach((s) => {
+          const base = [c.name, s.name, s.dob, s.allergy, s.medical, s.emergency];
+          const studentDates = dates.filter((d) => classAttendance[d]?.[s.id] || classJournals[d]?.[s.id]);
+          if (studentDates.length === 0) {
+            rows.push([...base, "", "", "", "", "", "", ""]);
+          } else {
+            studentDates.forEach((d) => {
+              const att = classAttendance[d]?.[s.id];
+              const j = classJournals[d]?.[s.id];
+              rows.push([
+                ...base,
+                d,
+                att?.status ? STATUS_LABEL[att.status] : "",
+                att?.note || "",
+                j?.mood ? MOOD_LABEL[j.mood] : "",
+                j?.meal ? MEAL_LABEL[j.meal] : "",
+                j?.nap ? NAP_LABEL[j.nap] : "",
+                j?.note || ""
+              ]);
+            });
+          }
+        });
+      });
+      downloadCSV(`\u5E7C\u5152\u8CC7\u6599\u8207\u7D00\u9304_${isoDate(/* @__PURE__ */ new Date())}.csv`, rows);
+      notify("\u5DF2\u532F\u51FA\u5E7C\u5152\u8CC7\u6599\u8207\u7D00\u9304");
+    };
     const save = () => {
       if (!draft.name.trim()) return notify("\u59D3\u540D\u4E0D\u53EF\u7A7A\u767D");
       setAccounts((prev) => prev.map((a) => a.username === account.username ? { ...a, name: draft.name.trim(), phone: draft.phone } : a));
@@ -15321,7 +15402,31 @@
           ] })
         ] }),
         isPrincipal && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionTitle, { children: "\u6559\u8077\u54E1\u7C3D\u5230\u7E3D\u89BD" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionTitle, { noMargin: true, children: "\u6559\u8077\u54E1\u7C3D\u5230\u7E3D\u89BD" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+              "button",
+              {
+                onClick: exportStaffAttendance,
+                style: {
+                  ...heading,
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  color: T.accentDeep,
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4
+                },
+                children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Download, { size: 14 }),
+                  " \u532F\u51FA\u7C3D\u5230\u8868"
+                ]
+              }
+            )
+          ] }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionCard, { style: { overflow: "hidden", marginBottom: 20 }, children: accounts.map((a, i) => {
             const rec = staffAttendance[a.username]?.[todayKey];
             return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
@@ -15372,7 +15477,13 @@
               },
               a.username
             );
-          }) })
+          }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionTitle, { children: "\u5E7C\u5152\u8CC7\u6599\u532F\u51FA" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(SectionCard, { style: { padding: "14px" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 12.5, color: T.sub, marginBottom: 12, lineHeight: 1.5 }, children: "\u532F\u51FA\u5168\u5712\u6240\u6709\u73ED\u7D1A\u5E7C\u5152\u7684\u57FA\u672C\u8CC7\u6599\u3001\u51FA\u7F3A\u5E2D\u6B77\u53F2\u7D00\u9304\u8207\u6BCF\u65E5\u65E5\u8A8C\uFF0C\u683C\u5F0F\u70BA CSV\uFF0C\u53EF\u76F4\u63A5\u4EE5 Excel \u958B\u555F\u3002" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: exportStudentsData, icon: Download, full: true, children: "\u532F\u51FA\u5E7C\u5152\u8CC7\u6599\u8207\u7D00\u9304" })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { marginBottom: 20 } })
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionTitle, { children: "\u767B\u5165\u5E33\u5BC6" }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionCard, { style: { overflow: "hidden", marginBottom: 20 }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 14px" }, children: [
