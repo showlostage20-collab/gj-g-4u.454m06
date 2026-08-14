@@ -13769,11 +13769,13 @@
                   onLogout: handleLogout,
                   onCredentialsChanged: updateSessionUsername,
                   staffAttendance,
+                  setStaffAttendance,
                   onCheckIn: () => staffCheckIn(account.username),
                   onCheckOut: () => staffCheckOut(account.username),
                   studentsByClass,
                   attendance,
-                  journals
+                  journals,
+                  approvals: myApprovals
                 }
               )
             ] }),
@@ -14493,7 +14495,8 @@
     const [filter, setFilter] = (0, import_react.useState)("all");
     const [selectedId, setSelectedId] = (0, import_react.useState)(null);
     const [addOpen, setAddOpen] = (0, import_react.useState)(false);
-    const [draft, setDraft] = (0, import_react.useState)({ type: "leave", applicant: myIdentity, summary: "" });
+    const todayKeyForLeave = isoDate(/* @__PURE__ */ new Date());
+    const [draft, setDraft] = (0, import_react.useState)({ type: "leave", applicant: myIdentity, summary: "", leaveDate: todayKeyForLeave, leaveStart: "", leaveEnd: "", reason: "" });
     const [confirmWithdraw, setConfirmWithdraw] = (0, import_react.useState)(false);
     const filtered = approvals.filter((a) => {
       if (filter === "pending") return a.status === "pending";
@@ -14512,13 +14515,39 @@
       notify("\u5DF2\u64A4\u56DE\u7533\u8ACB");
     };
     const addApproval = () => {
-      if (!draft.applicant.trim() || !draft.summary.trim()) return notify("\u8ACB\u586B\u5BEB\u5B8C\u6574\u5167\u5BB9");
+      if (!draft.applicant.trim()) return notify("\u8ACB\u586B\u5BEB\u5B8C\u6574\u5167\u5BB9");
       const typeName = { leave: "\u8ACB\u5047\u7533\u8ACB", purchase: "\u63A1\u8CFC\u7533\u8ACB", repair: "\u7DAD\u4FEE\u5831\u4FEE" }[draft.type];
-      setApprovals((list) => [
-        { id: uid(), type: draft.type, typeName, applicant: draft.applicant.trim(), date: todayStr(), summary: draft.summary.trim(), status: "pending" },
-        ...list
-      ]);
-      setDraft({ type: "leave", applicant: myIdentity, summary: "" });
+      if (draft.type === "leave") {
+        if (!draft.leaveDate) return notify("\u8ACB\u9078\u64C7\u8ACB\u5047\u65E5\u671F");
+        if (!draft.reason.trim()) return notify("\u8ACB\u586B\u5BEB\u8ACB\u5047\u539F\u56E0");
+        const d = parseIsoLocal(draft.leaveDate);
+        const dateLabel = `${d.getMonth() + 1}/${d.getDate()}`;
+        const timeLabel = draft.leaveStart && draft.leaveEnd ? `${draft.leaveStart}\u2013${draft.leaveEnd}` : "\u5168\u5929";
+        const summary = `${dateLabel}\uFF08${timeLabel}\uFF09\u30FB${draft.reason.trim()}`;
+        setApprovals((list) => [
+          {
+            id: uid(),
+            type: "leave",
+            typeName,
+            applicant: draft.applicant.trim(),
+            date: todayStr(),
+            leaveDate: draft.leaveDate,
+            leaveStart: draft.leaveStart,
+            leaveEnd: draft.leaveEnd,
+            reason: draft.reason.trim(),
+            summary,
+            status: "pending"
+          },
+          ...list
+        ]);
+      } else {
+        if (!draft.summary.trim()) return notify("\u8ACB\u586B\u5BEB\u5B8C\u6574\u5167\u5BB9");
+        setApprovals((list) => [
+          { id: uid(), type: draft.type, typeName, applicant: draft.applicant.trim(), date: todayStr(), summary: draft.summary.trim(), status: "pending" },
+          ...list
+        ]);
+      }
+      setDraft({ type: "leave", applicant: myIdentity, summary: "", leaveDate: todayKeyForLeave, leaveStart: "", leaveEnd: "", reason: "" });
       setAddOpen(false);
       notify("\u5DF2\u9001\u51FA\u7533\u8ACB");
     };
@@ -14645,7 +14674,15 @@
           k
         )) }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u7533\u8ACB\u4EBA", value: draft.applicant, onChange: (v) => setDraft({ ...draft, applicant: v }), placeholder: "\u4F8B\u5982\uFF1A\u9673\u96C5\u5A77 \u8001\u5E2B\uFF08\u5411\u65E5\u8475\u73ED\uFF09" }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u5167\u5BB9\u8AAA\u660E", value: draft.summary, onChange: (v) => setDraft({ ...draft, summary: v }), placeholder: "\u8ACB\u7C21\u8FF0\u7533\u8ACB\u5167\u5BB9", textarea: true }),
+        draft.type === "leave" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u8ACB\u5047\u65E5\u671F", value: draft.leaveDate, onChange: (v) => setDraft({ ...draft, leaveDate: v }), placeholder: "YYYY-MM-DD" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 10 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { flex: 1 }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u958B\u59CB\u6642\u9593\uFF08\u7559\u7A7A\uFF1D\u5168\u5929\uFF09", value: draft.leaveStart, onChange: (v) => setDraft({ ...draft, leaveStart: v }), placeholder: "09:00" }) }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { flex: 1 }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u7D50\u675F\u6642\u9593", value: draft.leaveEnd, onChange: (v) => setDraft({ ...draft, leaveEnd: v }), placeholder: "12:00" }) })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u8ACB\u5047\u539F\u56E0", value: draft.reason, onChange: (v) => setDraft({ ...draft, reason: v }), placeholder: "\u4F8B\u5982\uFF1A\u611F\u5192\u9700\u5C31\u91AB\u3001\u5BB6\u4E2D\u6709\u4E8B", textarea: true }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 11.5, color: T.sub, marginBottom: 14, lineHeight: 1.5 }, children: "\u6838\u51C6\u5F8C\uFF0C\u8A72\u65E5\u5C07\u81EA\u52D5\u505C\u7528\u60A8\u7684\u7C3D\u5230\uFF0F\u7C3D\u9000\u529F\u80FD\u3002" })
+        ] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u5167\u5BB9\u8AAA\u660E", value: draft.summary, onChange: (v) => setDraft({ ...draft, summary: v }), placeholder: "\u8ACB\u7C21\u8FF0\u7533\u8ACB\u5167\u5BB9", textarea: true }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: addApproval, full: true, icon: Plus, children: "\u9001\u51FA\u7533\u8ACB" })
       ] }),
       confirmWithdraw && selected && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
@@ -15902,7 +15939,17 @@
       )
     ] });
   }
-  function MeTab({ account, accounts, setAccounts, classes, schoolName, setSchoolName, notifOn, setNotifOn, notify, onLogout, onCredentialsChanged, staffAttendance, onCheckIn, onCheckOut, studentsByClass, attendance, journals }) {
+  function MeTab({ account, accounts, setAccounts, classes, schoolName, setSchoolName, notifOn, setNotifOn, notify, onLogout, onCredentialsChanged, staffAttendance, setStaffAttendance, onCheckIn, onCheckOut, studentsByClass, attendance, journals, approvals }) {
+    const renameStaffAttendanceKey = (oldUsername, newUsername) => {
+      if (oldUsername === newUsername) return;
+      setStaffAttendance((prev) => {
+        if (!prev[oldUsername]) return prev;
+        const next = { ...prev };
+        next[newUsername] = { ...next[newUsername] || {}, ...next[oldUsername] };
+        delete next[oldUsername];
+        return next;
+      });
+    };
     const isPrincipal = account.role === "principal";
     const myClassNames = classNamesFor(account.classIds, classes);
     const roleLine = isPrincipal ? ROLE_LABEL.principal : myClassNames.length ? `${myClassNames.join("\u3001")}\u30FB${ROLE_LABEL.teacher}` : ROLE_LABEL.teacher;
@@ -15918,6 +15965,9 @@
     });
     const todayKey = isoDate(/* @__PURE__ */ new Date());
     const myTodayRec = staffAttendance[account.username]?.[todayKey];
+    const approvedLeaveToday = (approvals || []).find(
+      (a) => a.type === "leave" && a.status === "approved" && a.leaveDate === todayKey && isOwnApproval(a, account)
+    );
     const [historyFor, setHistoryFor] = (0, import_react.useState)(null);
     const staffHistoryFor = (username) => Object.entries(staffAttendance[username] || {}).filter(([, rec]) => rec.checkIn || rec.checkOut).sort(([a], [b]) => a < b ? 1 : -1);
     const exportStaffAttendance = () => {
@@ -16008,6 +16058,7 @@
       setAccounts(
         (prev) => prev.map((a) => a.username === account.username ? { ...a, username: newUsername, password: credDraft.newPassword } : a)
       );
+      renameStaffAttendanceKey(account.username, newUsername);
       onCredentialsChanged(newUsername);
       setCredOpen(false);
       notify("\u5DF2\u66F4\u65B0\u767B\u5165\u5E33\u865F\u5BC6\u78BC");
@@ -16048,14 +16099,15 @@
     };
     const saveAccountEdit = () => {
       if (!acctDraft.name.trim() || !acctDraft.username.trim() || !acctDraft.password.trim()) return notify("\u8ACB\u5B8C\u6574\u586B\u5BEB\u5E33\u865F\u8CC7\u6599");
-      const dupe = accounts.some((a) => a.username === acctDraft.username.trim() && a.username !== editUsername);
+      const newUsername = acctDraft.username.trim();
+      const dupe = accounts.some((a) => a.username === newUsername && a.username !== editUsername);
       if (dupe) return notify("\u5E33\u865F\u5DF2\u88AB\u4F7F\u7528\uFF0C\u8ACB\u63DB\u4E00\u500B");
       setAccounts(
         (prev) => prev.map(
           (a) => a.username === editUsername ? {
             ...a,
             name: acctDraft.name.trim(),
-            username: acctDraft.username.trim(),
+            username: newUsername,
             password: acctDraft.password,
             classIds: acctDraft.classIds,
             phone: acctDraft.phone,
@@ -16067,6 +16119,7 @@
           } : a
         )
       );
+      renameStaffAttendanceKey(editUsername, newUsername);
       setEditUsername(null);
       notify("\u5DF2\u66F4\u65B0\u8001\u5E2B\u5E33\u865F");
     };
@@ -16241,8 +16294,32 @@
               /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...heading, fontWeight: 700, fontSize: 16, color: myTodayRec?.checkOut ? T.accentDeep : T.faint }, children: myTodayRec?.checkOut || "\u5C1A\u672A\u7C3D\u9000" })
             ] })
           ] }) }),
+          approvedLeaveToday && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+            "div",
+            {
+              style: {
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                background: T.roseSoft,
+                border: "1px solid rgba(121,14,61,0.2)",
+                borderRadius: 10,
+                padding: "9px 11px",
+                marginBottom: 10
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AlertTriangle, { size: 15, color: T.roseDeep, style: { flexShrink: 0 } }),
+                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 12.5, color: T.roseDeep, lineHeight: 1.5 }, children: [
+                  "\u4ECA\u65E5\u8ACB\u5047\u4E2D\uFF08",
+                  approvedLeaveToday.leaveStart && approvedLeaveToday.leaveEnd ? `${approvedLeaveToday.leaveStart}\u2013${approvedLeaveToday.leaveEnd}` : "\u5168\u5929",
+                  "\uFF09\uFF0C\u66AB\u505C\u7C3D\u5230\uFF0F\u7C3D\u9000\u529F\u80FD"
+                ] })
+              ]
+            }
+          ),
           /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 8 }, children: [
-            !myTodayRec?.checkIn ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: onCheckIn, icon: Check, full: true, children: "\u7C3D\u5230" }) : !myTodayRec?.checkOut ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: onCheckOut, tone: "rose", icon: Check, full: true, children: "\u7C3D\u9000" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: () => {
+            approvedLeaveToday ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: () => {
+            }, full: true, children: "\u8ACB\u5047\u671F\u9593\u7121\u6CD5\u7C3D\u5230\u7C3D\u9000" }) : !myTodayRec?.checkIn ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: onCheckIn, icon: Check, full: true, children: "\u7C3D\u5230" }) : !myTodayRec?.checkOut ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: onCheckOut, tone: "rose", icon: Check, full: true, children: "\u7C3D\u9000" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: () => {
             }, full: true, children: "\u4ECA\u65E5\u5DF2\u5B8C\u6210\u7C3D\u5230\u7C3D\u9000" }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconBtn, { icon: CalendarIcon, tone: "line", size: 44, onClick: () => setHistoryFor(account.username), title: "\u67E5\u770B\u6211\u7684\u7C3D\u5230\u7D00\u9304" })
           ] })
