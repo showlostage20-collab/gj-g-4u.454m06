@@ -13182,6 +13182,17 @@
   var MEAL_LABEL = { good: "\u5403\u5F97\u597D", ok: "\u666E\u901A", less: "\u5403\u5F97\u5C11" };
   var NAP_ORDER = ["slept", "restless", "none"];
   var NAP_LABEL = { slept: "\u6709\u5348\u7761", restless: "\u4E0D\u5B89\u7A69", none: "\u672A\u5348\u7761" };
+  var ACTIVITY_OPTIONS = [
+    { key: "blocks", label: "\u7A4D\u6728\uFF0F\u64CD\u4F5C\u6559\u5177" },
+    { key: "reading", label: "\u7E6A\u672C\u6545\u4E8B" },
+    { key: "art", label: "\u7F8E\u52DE\u5275\u4F5C" },
+    { key: "music", label: "\u97F3\u6A02\u5F8B\u52D5" },
+    { key: "outdoor", label: "\u6236\u5916\uFF0F\u9AD4\u80FD\u6D3B\u52D5" },
+    { key: "group", label: "\u5718\u9AD4\u904A\u6232" },
+    { key: "language", label: "\u8A9E\u6587\u8A8D\u77E5" },
+    { key: "selfcare", label: "\u751F\u6D3B\u81EA\u7406\u7DF4\u7FD2" }
+  ];
+  var ACTIVITY_LABEL = Object.fromEntries(ACTIVITY_OPTIONS.map((o) => [o.key, o.label]));
   var APPROVAL_STATUS_LABEL = { pending: "\u5F85\u5BE9\u6838", approved: "\u5DF2\u6838\u51C6", rejected: "\u5DF2\u9000\u56DE" };
   var APPROVAL_TYPE_ICON = { leave: ClipboardCheck, purchase: Utensils, repair: AlertTriangle };
   var isOwnApproval = (a, account) => !!account && a.applicant.startsWith(account.name);
@@ -13256,6 +13267,37 @@
       },
       k
     )) });
+  }
+  function CheckboxGroup({ options, value, onChange }) {
+    const toggle = (key) => onChange(value.includes(key) ? value.filter((k) => k !== key) : [...value, key]);
+    return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }, children: options.map((o) => {
+      const active = value.includes(o.key);
+      return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+        "button",
+        {
+          onClick: () => toggle(o.key),
+          style: {
+            ...heading,
+            fontWeight: 700,
+            fontSize: 12.5,
+            padding: "7px 14px",
+            borderRadius: 20,
+            cursor: "pointer",
+            border: `1px solid ${active ? T.accent : T.line}`,
+            background: active ? T.accentSoft : "transparent",
+            color: active ? T.accentDeep : T.sub,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5
+          },
+          children: [
+            active && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Check, { size: 12 }),
+            o.label
+          ]
+        },
+        o.key
+      );
+    }) });
   }
   function IconBtn({ icon: Icon, onClick, title, tone = "ghost", size = 30, disabled }) {
     const tones = {
@@ -13389,7 +13431,7 @@
       }
     );
   }
-  function ConfirmDialog({ title, message, confirmLabel = "\u522A\u9664", onConfirm, onCancel }) {
+  function ConfirmDialog({ title, message, confirmLabel = "\u522A\u9664", confirmIcon: ConfirmIcon = Trash2, confirmTone = "rose", onConfirm, onCancel }) {
     return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
       "div",
       {
@@ -13421,7 +13463,7 @@
               /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 13.5, color: T.sub, lineHeight: 1.6, marginBottom: 20 }, children: message }),
               /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 10 }, children: [
                 /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: onCancel, full: true, children: "\u53D6\u6D88" }),
-                /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: onConfirm, tone: "rose", icon: Trash2, full: true, children: confirmLabel })
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: onConfirm, tone: confirmTone, icon: ConfirmIcon, full: true, children: confirmLabel })
               ] })
             ]
           }
@@ -13517,6 +13559,7 @@
     const [studentsByClass, setStudentsByClass] = (0, import_react.useState)(seedStudents);
     const [attendance, setAttendance] = (0, import_react.useState)(buildSeedAttendance);
     const [journals, setJournals] = (0, import_react.useState)({});
+    const [classJournals, setClassJournals] = (0, import_react.useState)({});
     const [staffAttendance, setStaffAttendance] = (0, import_react.useState)({});
     const staffCheckIn = (username) => {
       const now = /* @__PURE__ */ new Date();
@@ -13562,10 +13605,15 @@
         const attended = att && (att.status === "present" || att.status === "half");
         if (!attended) return false;
         const j = dayJournal[s.id];
-        const hasJournal = j && (j.mood || j.meal || j.nap || j.note);
+        const hasJournal = j && (j.mood || j.meal || j.nap || j.note || j.activities && j.activities.length > 0);
         return !hasJournal;
       }).length;
     }, 0);
+    const missingClassJournalCount = isPrincipal ? 0 : myVisibleClasses.filter((c) => {
+      const cj = classJournals[c.id]?.[todayKeyForReminder];
+      const hasClassJournal = cj && (cj.classStatus || cj.specialEvents || cj.note || cj.activities && cj.activities.length > 0);
+      return !hasClassJournal;
+    }).length;
     const notifications = [
       ...myApprovals.filter((a) => a.status === "pending").map((a) => ({
         id: `approval-${a.id}`,
@@ -13592,6 +13640,16 @@
           desc: "\u9EDE\u6B64\u524D\u5F80\u73ED\u7D1A\u9801\u9762\u5B8C\u6210\u65E5\u8A8C\u8A18\u9304",
           date: todayStr()
         }
+      ] : [],
+      ...missingClassJournalCount > 0 ? [
+        {
+          id: "class-journal-reminder",
+          kind: "classJournal",
+          icon: Megaphone,
+          title: "\u5C1A\u672A\u586B\u5BEB\u4ECA\u65E5\u73ED\u7D1A\u65E5\u8A8C",
+          desc: "\u9EDE\u6B64\u524D\u5F80\u73ED\u7D1A\u9801\u9762\u5B8C\u6210\u73ED\u7D1A\u65E5\u8A8C\u8A18\u9304",
+          date: todayStr()
+        }
       ] : []
     ];
     const unreadCount = notifications.filter((n) => !readNotifIds.has(n.id)).length;
@@ -13607,7 +13665,7 @@
     const openNotification = (n) => {
       markNotifRead(n.id);
       setNotifOpen(false);
-      setTab(n.kind === "approval" ? "approval" : n.kind === "journal" ? "class" : "home");
+      setTab(n.kind === "approval" ? "approval" : n.kind === "journal" || n.kind === "classJournal" ? "class" : "home");
     };
     const handleLogout = () => {
       setSession(null);
@@ -13667,6 +13725,7 @@
                   studentsByClass,
                   attendance,
                   journals,
+                  classJournals,
                   approvals: myApprovals,
                   announcements,
                   setAnnouncements,
@@ -13689,6 +13748,8 @@
                   setAttendance,
                   journals,
                   setJournals,
+                  classJournals,
+                  setClassJournals,
                   notify
                 }
               ),
@@ -13989,7 +14050,7 @@
       }
     );
   }
-  function HomeTab({ role, myClassIds, classes, studentsByClass, attendance, journals, approvals, announcements, setAnnouncements, notify, goApproval, goClass }) {
+  function HomeTab({ role, myClassIds, classes, studentsByClass, attendance, journals, classJournals, approvals, announcements, setAnnouncements, notify, goApproval, goClass }) {
     const canEdit = role === "principal";
     const visibleClasses = canEdit ? classes : classes.filter((c) => (myClassIds || []).includes(c.id));
     const todayKey = isoDate(/* @__PURE__ */ new Date());
@@ -14008,9 +14069,14 @@
         const attended = att && (att.status === "present" || att.status === "half");
         if (!attended) return false;
         const j = dayJournal[s.id];
-        const hasJournal = j && (j.mood || j.meal || j.nap || j.note);
+        const hasJournal = j && (j.mood || j.meal || j.nap || j.note || j.activities && j.activities.length > 0);
         return !hasJournal;
       });
+    });
+    const missingClassJournalClasses = canEdit ? [] : visibleClasses.filter((c) => {
+      const cj = classJournals[c.id]?.[todayKey];
+      const hasClassJournal = cj && (cj.classStatus || cj.specialEvents || cj.note || cj.activities && cj.activities.length > 0);
+      return !hasClassJournal;
     });
     const [addOpen, setAddOpen] = (0, import_react.useState)(false);
     const [draft, setDraft] = (0, import_react.useState)({ title: "", tag: "\u5168\u5712", content: "" });
@@ -14087,6 +14153,46 @@
               /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 12, color: T.sub, marginTop: 2 }, children: missingJournalStudents.map((s) => s.name).join("\u3001") })
             ] }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChevronRight, { size: 16, color: T.amber, style: { flexShrink: 0 } })
+          ]
+        }
+      ),
+      missingClassJournalClasses.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+        "div",
+        {
+          onClick: goClass,
+          style: {
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            cursor: "pointer",
+            background: T.roseSoft,
+            border: `1px solid rgba(121,14,61,0.2)`,
+            borderRadius: 14,
+            padding: "13px 14px",
+            marginBottom: 16
+          },
+          children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+              "div",
+              {
+                style: {
+                  width: 34,
+                  height: 34,
+                  borderRadius: 9,
+                  background: "#fff",
+                  color: T.roseDeep,
+                  display: "grid",
+                  placeItems: "center",
+                  flexShrink: 0
+                },
+                children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Megaphone, { size: 16 })
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { flex: 1, minWidth: 0 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontWeight: 700, fontSize: 14, color: T.ink }, children: "\u5C1A\u672A\u586B\u5BEB\u4ECA\u65E5\u73ED\u7D1A\u65E5\u8A8C" }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 12, color: T.sub, marginTop: 2 }, children: missingClassJournalClasses.map((c) => c.name).join("\u3001") })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChevronRight, { size: 16, color: T.roseDeep, style: { flexShrink: 0 } })
           ]
         }
       ),
@@ -14563,7 +14669,7 @@
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 14.5, lineHeight: 1.5 }, children: value })
     ] });
   }
-  function ClassTab({ role, myClassIds, classes, setClasses, studentsByClass, setStudentsByClass, attendance, setAttendance, journals, setJournals, notify }) {
+  function ClassTab({ role, myClassIds, classes, setClasses, studentsByClass, setStudentsByClass, attendance, setAttendance, journals, setJournals, classJournals, setClassJournals, notify }) {
     const isPrincipal = role === "principal";
     const myClassIdSet = myClassIds || [];
     const visibleClasses = isPrincipal ? classes : classes.filter((c) => myClassIdSet.includes(c.id));
@@ -14582,6 +14688,7 @@
     const [historyOpen, setHistoryOpen] = (0, import_react.useState)(false);
     const [historyViewMonth, setHistoryViewMonth] = (0, import_react.useState)(new Date(today.getFullYear(), today.getMonth(), 1));
     const [confirmDeleteClass, setConfirmDeleteClass] = (0, import_react.useState)(null);
+    const [confirmExportClassJournal, setConfirmExportClassJournal] = (0, import_react.useState)(false);
     const [confirmDeleteStudent, setConfirmDeleteStudent] = (0, import_react.useState)(false);
     (0, import_react.useEffect)(() => {
       if (isPrincipal) {
@@ -14597,6 +14704,77 @@
     const isAttnFuture = attnKey > todayKey;
     const dayRecord = attendance[classId]?.[attnKey] || {};
     const dayJournal = journals[classId]?.[attnKey] || {};
+    const classJournalEntry = classJournals[classId]?.[attnKey];
+    const [classJournalOpen, setClassJournalOpen] = (0, import_react.useState)(false);
+    const [classJournalDraft, setClassJournalDraft] = (0, import_react.useState)({ activities: [], classStatus: "", specialEvents: "", note: "" });
+    const openClassJournal = () => {
+      setClassJournalDraft({
+        activities: classJournalEntry?.activities || [],
+        classStatus: classJournalEntry?.classStatus || "",
+        specialEvents: classJournalEntry?.specialEvents || "",
+        note: classJournalEntry?.note || ""
+      });
+      setClassJournalOpen(true);
+    };
+    const saveClassJournal = () => {
+      setClassJournals((prev) => {
+        const classRec = prev[classId] || {};
+        return {
+          ...prev,
+          [classId]: {
+            ...classRec,
+            [attnKey]: {
+              activities: classJournalDraft.activities,
+              classStatus: classJournalDraft.classStatus.trim(),
+              specialEvents: classJournalDraft.specialEvents.trim(),
+              note: classJournalDraft.note.trim()
+            }
+          }
+        };
+      });
+      setClassJournalOpen(false);
+      notify("\u5DF2\u66F4\u65B0\u73ED\u7D1A\u65E5\u8A8C");
+    };
+    const attnCountsFor = (dateKey) => {
+      const rec = attendance[classId]?.[dateKey] || {};
+      const counts = { present: 0, half: 0, leave: 0, absent: 0 };
+      Object.values(rec).forEach((r) => {
+        if (counts[r.status] != null) counts[r.status] += 1;
+      });
+      return counts;
+    };
+    const todayAttnCounts = attnCountsFor(attnKey);
+    const exportClassJournal = () => {
+      const rows = [
+        ["\u73ED\u7D1A", "\u65E5\u671F", "\u5DF2\u5230\u4EBA\u6578", "\u534A\u5929\u4EBA\u6578", "\u8ACB\u5047\u4EBA\u6578", "\u672A\u5230\u4EBA\u6578", "\u73ED\u7D1A\u6D3B\u52D5", "\u73ED\u7D1A\u72C0\u6CC1", "\u7279\u6B8A\u4E8B\u4EF6", "\u65E5\u8A8C\u5167\u5BB9"]
+      ];
+      const className = classes.find((c) => c.id === classId)?.name || "";
+      const dates = Array.from(
+        /* @__PURE__ */ new Set([...Object.keys(attendance[classId] || {}), ...Object.keys(classJournals[classId] || {})])
+      ).sort();
+      if (dates.length === 0) {
+        notify("\u76EE\u524D\u6C92\u6709\u53EF\u532F\u51FA\u7684\u73ED\u7D1A\u65E5\u8A8C\u7D00\u9304");
+        return;
+      }
+      dates.forEach((d) => {
+        const counts = attnCountsFor(d);
+        const cj = classJournals[classId]?.[d];
+        rows.push([
+          className,
+          d,
+          counts.present,
+          counts.half,
+          counts.leave,
+          counts.absent,
+          cj?.activities && cj.activities.length ? cj.activities.map((k) => ACTIVITY_LABEL[k]).join("\u3001") : "",
+          cj?.classStatus || "",
+          cj?.specialEvents || "",
+          cj?.note || ""
+        ]);
+      });
+      downloadCSV(`${className}_\u73ED\u7D1A\u65E5\u8A8C_${todayKey}.csv`, rows);
+      notify("\u5DF2\u532F\u51FA\u73ED\u7D1A\u65E5\u8A8C");
+    };
     const CLASS_ICON_CYCLE = ["sun", "sprout", "flower"];
     const addClass = () => {
       const name = newClassName.trim();
@@ -14637,6 +14815,11 @@
         delete next[c.id];
         return next;
       });
+      setClassJournals((prev) => {
+        const next = { ...prev };
+        delete next[c.id];
+        return next;
+      });
       notify(`\u5DF2\u522A\u9664\u300C${c.name}\u300D`);
     };
     const changeAttnDay = (delta) => {
@@ -14662,7 +14845,8 @@
       });
     };
     const [noteFor, setNoteFor] = (0, import_react.useState)(null);
-    const [noteDraft, setNoteDraft] = (0, import_react.useState)({ status: "present", note: "", mood: "", meal: "", nap: "", journal: "" });
+    const [journalViewFor, setJournalViewFor] = (0, import_react.useState)(null);
+    const [noteDraft, setNoteDraft] = (0, import_react.useState)({ status: "present", note: "", mood: "", meal: "", nap: "", activities: [], journal: "" });
     const openNote = (s, e) => {
       e.stopPropagation();
       if (isAttnFuture) return;
@@ -14674,6 +14858,7 @@
         mood: j?.mood || "",
         meal: j?.meal || "",
         nap: j?.nap || "",
+        activities: j?.activities || [],
         journal: j?.note || ""
       });
       setNoteFor(s.id);
@@ -14696,7 +14881,7 @@
             ...classRec,
             [attnKey]: {
               ...dayRec,
-              [noteFor]: { mood: noteDraft.mood, meal: noteDraft.meal, nap: noteDraft.nap, note: noteDraft.journal.trim() }
+              [noteFor]: { mood: noteDraft.mood, meal: noteDraft.meal, nap: noteDraft.nap, activities: noteDraft.activities, note: noteDraft.journal.trim() }
             }
           }
         };
@@ -14712,8 +14897,8 @@
       setJournalHistoryFor(s.id);
     };
     const journalEntriesFor = (studentId) => {
-      const classJournals = journals[classId] || {};
-      return Object.entries(classJournals).map(([date, dayMap]) => ({ date, entry: dayMap[studentId] })).filter(({ entry }) => entry && (entry.mood || entry.meal || entry.nap || entry.note)).sort((a, b) => a.date < b.date ? 1 : -1);
+      const classJournals2 = journals[classId] || {};
+      return Object.entries(classJournals2).map(([date, dayMap]) => ({ date, entry: dayMap[studentId] })).filter(({ entry }) => entry && (entry.mood || entry.meal || entry.nap || entry.note || entry.activities && entry.activities.length > 0)).sort((a, b) => a.date < b.date ? 1 : -1);
     };
     const jumpToJournalDate = (dateStr) => {
       setAttnDate(parseIsoLocal(dateStr));
@@ -14910,6 +15095,51 @@
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconBtn, { icon: ChevronRight, tone: "line", onClick: () => changeAttnDay(1), title: "\u5F8C\u4E00\u5929", disabled: isAttnToday })
           ] })
         ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(SectionCard, { style: { padding: "13px 14px", marginBottom: 14 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 6 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Megaphone, { size: 15, color: T.accentDeep }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { ...heading, fontWeight: 700, fontSize: 13.5 }, children: "\u73ED\u7D1A\u65E5\u8A8C" })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 6 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconBtn, { icon: Download, size: 26, tone: "line", onClick: () => setConfirmExportClassJournal(true), title: "\u532F\u51FA\u73ED\u7D1A\u65E5\u8A8C" }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconBtn, { icon: Pencil, size: 26, tone: "line", disabled: isAttnFuture, onClick: openClassJournal, title: "\u7DE8\u8F2F\u73ED\u7D1A\u65E5\u8A8C" })
+            ] })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Tag, { bg: T.accentSoft, fg: T.accentDeep, children: [
+              "\u5DF2\u5230 ",
+              todayAttnCounts.present
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Tag, { bg: T.amberSoft, fg: T.amber, children: [
+              "\u534A\u5929 ",
+              todayAttnCounts.half
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Tag, { bg: T.roseSoft, fg: T.roseDeep, children: [
+              "\u8ACB\u5047 ",
+              todayAttnCounts.leave
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Tag, { bg: "#eee", fg: T.sub, children: [
+              "\u672A\u5230 ",
+              todayAttnCounts.absent
+            ] })
+          ] }),
+          classJournalEntry && (classJournalEntry.activities?.length > 0 || classJournalEntry.classStatus || classJournalEntry.specialEvents || classJournalEntry.note) ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: 8 }, children: [
+            classJournalEntry.activities?.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" }, children: classJournalEntry.activities.map((k) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Tag, { outline: true, children: ACTIVITY_LABEL[k] }, k)) }),
+            classJournalEntry.classStatus && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 11.5, color: T.sub, marginBottom: 2 }, children: "\u73ED\u7D1A\u72C0\u6CC1" }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 13, lineHeight: 1.6, color: T.ink }, children: classJournalEntry.classStatus })
+            ] }),
+            classJournalEntry.specialEvents && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 11.5, color: T.rose, marginBottom: 2 }, children: "\u7279\u6B8A\u4E8B\u4EF6" }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 13, lineHeight: 1.6, color: T.ink }, children: classJournalEntry.specialEvents })
+            ] }),
+            classJournalEntry.note && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 11.5, color: T.sub, marginBottom: 2 }, children: "\u65E5\u8A8C\u5167\u5BB9" }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 13, lineHeight: 1.6, color: T.ink }, children: classJournalEntry.note })
+            ] })
+          ] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 12.5, color: T.faint }, children: isAttnFuture ? "\u5C1A\u672A\u5230\u9019\u4E00\u5929\uFF0C\u7121\u6CD5\u586B\u5BEB" : "\u5C1A\u672A\u586B\u5BEB\u672C\u65E5\u73ED\u7D1A\u65E5\u8A8C" })
+        ] }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(SectionTitle, { noMargin: true, children: [
             "\u5E7C\u5152\u540D\u55AE\u30FB",
@@ -14947,7 +15177,7 @@
             const st = rec?.status;
             const sc = st ? STATUS_COLOR[st] : { bg: "transparent", fg: T.faint, bd: T.line };
             const j = dayJournal[s.id];
-            const hasJournal = !!(j && (j.mood || j.meal || j.nap || j.note));
+            const hasJournal = !!(j && (j.mood || j.meal || j.nap || j.note || j.activities && j.activities.length > 0));
             return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
               "div",
               {
@@ -14984,7 +15214,10 @@
                     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 6 }, children: [
                       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { fontWeight: 600, fontSize: 14.5 }, children: s.name }),
                       s.allergy && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AlertTriangle, { size: 13, color: T.rose, title: `\u904E\u654F\uFF1A${s.allergy}` }),
-                      hasJournal && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Tag, { bg: T.accentSoft, fg: T.accentDeep, children: "\u65E5\u8A8C" })
+                      hasJournal && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { onClick: (e) => {
+                        e.stopPropagation();
+                        setJournalViewFor(s.id);
+                      }, style: { cursor: "pointer" }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Tag, { bg: T.accentSoft, fg: T.accentDeep, children: "\u65E5\u8A8C" }) })
                     ] }),
                     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 12, color: T.sub, marginTop: 1 }, children: [
                       s.dob,
@@ -14993,7 +15226,30 @@
                     rec?.note && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 11.5, color: T.amber, marginTop: 2 }, children: [
                       "\u5099\u8A3B\uFF1A",
                       rec.note
-                    ] })
+                    ] }),
+                    hasJournal && j?.note && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+                      "div",
+                      {
+                        onClick: (e) => {
+                          e.stopPropagation();
+                          setJournalViewFor(s.id);
+                        },
+                        style: {
+                          fontSize: 11.5,
+                          color: T.accentDeep,
+                          marginTop: 2,
+                          cursor: "pointer",
+                          display: "-webkit-box",
+                          WebkitLineClamp: 1,
+                          WebkitBoxOrient: "vertical",
+                          overflow: "hidden"
+                        },
+                        children: [
+                          "\u65E5\u8A8C\uFF1A",
+                          j.note
+                        ]
+                      }
+                    )
                   ] }),
                   /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
                     IconBtn,
@@ -15165,6 +15421,8 @@
             ),
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { height: 1, background: T.line, margin: "6px 0 16px" } }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionTitle, { children: "\u4ECA\u65E5\u65E5\u8A8C" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...heading, fontSize: 12, fontWeight: 600, color: T.sub, marginBottom: 8 }, children: "\u4ECA\u65E5\u6D3B\u52D5\u5167\u5BB9\uFF08\u53EF\u8907\u9078\uFF09" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CheckboxGroup, { options: ACTIVITY_OPTIONS, value: noteDraft.activities, onChange: (v) => setNoteDraft({ ...noteDraft, activities: v }) }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...heading, fontSize: 12, fontWeight: 600, color: T.sub, marginBottom: 8 }, children: "\u7CBE\u795E\u72C0\u614B" }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChoiceGroup, { options: MOOD_ORDER, labels: MOOD_LABEL, value: noteDraft.mood, onChange: (v) => setNoteDraft({ ...noteDraft, mood: v }) }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...heading, fontSize: 12, fontWeight: 600, color: T.sub, marginBottom: 8 }, children: "\u7528\u9910\u72C0\u6CC1" }),
@@ -15174,10 +15432,10 @@
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
               Field,
               {
-                label: "\u65E5\u8A8C\u5167\u5BB9",
+                label: "\u5176\u4ED6\u5099\u8A3B\uFF08\u53EF\u8A73\u7D30\u586B\u5BEB\uFF09",
                 value: noteDraft.journal,
                 onChange: (v) => setNoteDraft({ ...noteDraft, journal: v }),
-                placeholder: "\u4ECA\u5929\u7684\u6D3B\u52D5\u3001\u72C0\u6CC1\u6216\u60F3\u8B93\u5BB6\u9577\u77E5\u9053\u7684\u4E8B",
+                placeholder: "\u4ECA\u5929\u7684\u5176\u4ED6\u72C0\u6CC1\u6216\u60F3\u8B93\u5BB6\u9577\u77E5\u9053\u7684\u4E8B",
                 textarea: true
               }
             ),
@@ -15235,11 +15493,12 @@
                     ] }),
                     isToday && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Tag, { children: "\u4ECA\u5929" })
                   ] }),
-                  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: entry.note ? 8 : 0 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: entry.note || entry.activities && entry.activities.length ? 8 : 0 }, children: [
                     entry.mood && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Tag, { bg: T.accentSoft, fg: T.accentDeep, children: MOOD_LABEL[entry.mood] }),
                     entry.meal && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Tag, { bg: T.amberSoft, fg: T.amber, children: MEAL_LABEL[entry.meal] }),
                     entry.nap && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Tag, { bg: T.roseSoft, fg: T.roseDeep, children: NAP_LABEL[entry.nap] })
                   ] }),
+                  entry.activities && entry.activities.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: entry.note ? 8 : 0 }, children: entry.activities.map((k) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Tag, { outline: true, children: ACTIVITY_LABEL[k] }, k)) }),
                   entry.note && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 13.5, lineHeight: 1.5 }, children: entry.note })
                 ] })
               },
@@ -15268,6 +15527,21 @@
           }
         }
       ),
+      confirmExportClassJournal && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+        ConfirmDialog,
+        {
+          title: "\u532F\u51FA\u73ED\u7D1A\u65E5\u8A8C",
+          message: `\u78BA\u5B9A\u8981\u532F\u51FA\u300C${classes.find((c) => c.id === classId)?.name || ""}\u300D\u7684\u73ED\u7D1A\u65E5\u8A8C\u7D00\u9304\u55CE\uFF1F\u5C07\u4E0B\u8F09\u70BA CSV \u6A94\u6848\u3002`,
+          confirmLabel: "\u532F\u51FA",
+          confirmIcon: Download,
+          confirmTone: "accent",
+          onCancel: () => setConfirmExportClassJournal(false),
+          onConfirm: () => {
+            exportClassJournal();
+            setConfirmExportClassJournal(false);
+          }
+        }
+      ),
       confirmDeleteStudent && studentDraft && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
         ConfirmDialog,
         {
@@ -15280,7 +15554,95 @@
             setConfirmDeleteStudent(false);
           }
         }
-      )
+      ),
+      journalViewFor && (() => {
+        const s = students.find((st) => st.id === journalViewFor);
+        const j = dayJournal[journalViewFor];
+        if (!s || !j) return null;
+        return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Sheet, { title: `${s.name}\u30FB${mdLabel(attnDate)} \u65E5\u8A8C\u5167\u5BB9`, onClose: () => setJournalViewFor(null), children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }, children: [
+            j.mood && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Tag, { bg: T.accentSoft, fg: T.accentDeep, children: MOOD_LABEL[j.mood] }),
+            j.meal && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Tag, { bg: T.amberSoft, fg: T.amber, children: MEAL_LABEL[j.meal] }),
+            j.nap && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Tag, { bg: T.roseSoft, fg: T.roseDeep, children: NAP_LABEL[j.nap] })
+          ] }),
+          j.activities && j.activities.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }, children: j.activities.map((k) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Tag, { outline: true, children: ACTIVITY_LABEL[k] }, k)) }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 14, color: T.ink, lineHeight: 1.8, whiteSpace: "pre-wrap", marginBottom: 20 }, children: j.note || "\uFF08\u5C1A\u672A\u586B\u5BEB\u6587\u5B57\u5099\u8A3B\uFF09" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+            GhostBtn,
+            {
+              onClick: () => {
+                setJournalViewFor(null);
+                openNote(s, { stopPropagation: () => {
+                } });
+              },
+              icon: Pencil,
+              full: true,
+              children: "\u7DE8\u8F2F\u65E5\u8A8C"
+            }
+          )
+        ] });
+      })(),
+      classJournalOpen && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Sheet, { title: `\u73ED\u7D1A\u65E5\u8A8C\u30FB${mdLabel(attnDate)}`, onClose: () => setClassJournalOpen(false), children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 12.5, color: T.sub, marginBottom: 10, lineHeight: 1.5 }, children: "\u8A18\u9304\u5168\u73ED\u4ECA\u5929\u5171\u540C\u9032\u884C\u7684\u6D3B\u52D5\u8207\u6574\u9AD4\u6982\u6CC1\uFF0C\u8207\u5E7C\u5152\u500B\u5225\u65E5\u8A8C\u5206\u958B\u4FDD\u5B58\u3002" }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Tag, { bg: T.accentSoft, fg: T.accentDeep, children: [
+            "\u5DF2\u5230 ",
+            todayAttnCounts.present
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Tag, { bg: T.amberSoft, fg: T.amber, children: [
+            "\u534A\u5929 ",
+            todayAttnCounts.half
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Tag, { bg: T.roseSoft, fg: T.roseDeep, children: [
+            "\u8ACB\u5047 ",
+            todayAttnCounts.leave
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Tag, { bg: "#eee", fg: T.sub, children: [
+            "\u672A\u5230 ",
+            todayAttnCounts.absent
+          ] })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...heading, fontSize: 12, fontWeight: 600, color: T.sub, marginBottom: 8 }, children: "\u4ECA\u65E5\u73ED\u7D1A\u6D3B\u52D5\uFF08\u53EF\u8907\u9078\uFF09" }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+          CheckboxGroup,
+          {
+            options: ACTIVITY_OPTIONS,
+            value: classJournalDraft.activities,
+            onChange: (v) => setClassJournalDraft({ ...classJournalDraft, activities: v })
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+          Field,
+          {
+            label: "\u73ED\u7D1A\u72C0\u6CC1",
+            value: classJournalDraft.classStatus,
+            onChange: (v) => setClassJournalDraft({ ...classJournalDraft, classStatus: v }),
+            placeholder: "\u4F8B\u5982\uFF1A\u6574\u9AD4\u51FA\u5E2D\u7A69\u5B9A\u3001\u60C5\u7DD2\u8868\u73FE\u826F\u597D",
+            textarea: true
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+          Field,
+          {
+            label: "\u7279\u6B8A\u4E8B\u4EF6",
+            value: classJournalDraft.specialEvents,
+            onChange: (v) => setClassJournalDraft({ ...classJournalDraft, specialEvents: v }),
+            placeholder: "\u4F8B\u5982\uFF1A\u67D0\u5E7C\u5152\u8EAB\u9AD4\u4E0D\u9069\u5DF2\u901A\u77E5\u5BB6\u9577\u3001\u73ED\u7D1A\u6709\u8A2A\u5BA2\u7B49",
+            textarea: true
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+          Field,
+          {
+            label: "\u73ED\u7D1A\u65E5\u8A8C\u5167\u5BB9",
+            value: classJournalDraft.note,
+            onChange: (v) => setClassJournalDraft({ ...classJournalDraft, note: v }),
+            placeholder: "\u4F8B\u5982\uFF1A\u4ECA\u5929\u5168\u73ED\u4E00\u8D77\u505A\u4E86\u4E2D\u79CB\u7BC0\u624B\u4F5C\u3001\u7DF4\u7FD2\u4E86\u9632\u9707\u6F14\u7DF4\u7B49\u6574\u9AD4\u8A18\u4E8B",
+            textarea: true
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: saveClassJournal, icon: Save, full: true, children: "\u5132\u5B58" })
+      ] })
     ] });
   }
   function MenuRow({ label, value }) {
@@ -15576,7 +15938,7 @@
     };
     const exportStudentsData = () => {
       const rows = [
-        ["\u73ED\u7D1A", "\u59D3\u540D", "\u51FA\u751F\u5E74\u6708", "\u904E\u654F\u539F", "\u5065\u5EB7\u5099\u8A3B", "\u7DCA\u6025\u806F\u7D61\u4EBA", "\u65E5\u671F", "\u51FA\u7F3A\u5E2D\u72C0\u614B", "\u51FA\u7F3A\u5E2D\u5099\u8A3B", "\u5FC3\u60C5", "\u7528\u9910\u72C0\u6CC1", "\u5348\u7761\u72C0\u6CC1", "\u65E5\u8A8C\u5167\u5BB9"]
+        ["\u73ED\u7D1A", "\u59D3\u540D", "\u51FA\u751F\u5E74\u6708", "\u904E\u654F\u539F", "\u5065\u5EB7\u5099\u8A3B", "\u7DCA\u6025\u806F\u7D61\u4EBA", "\u65E5\u671F", "\u51FA\u7F3A\u5E2D\u72C0\u614B", "\u51FA\u7F3A\u5E2D\u5099\u8A3B", "\u5FC3\u60C5", "\u7528\u9910\u72C0\u6CC1", "\u5348\u7761\u72C0\u6CC1", "\u4ECA\u65E5\u6D3B\u52D5\u5167\u5BB9", "\u65E5\u8A8C\u5167\u5BB9"]
       ];
       classes.forEach((c) => {
         const list = studentsByClass[c.id] || [];
@@ -15587,7 +15949,7 @@
           const base = [c.name, s.name, s.dob, s.allergy, s.medical, s.emergency];
           const studentDates = dates.filter((d) => classAttendance[d]?.[s.id] || classJournals[d]?.[s.id]);
           if (studentDates.length === 0) {
-            rows.push([...base, "", "", "", "", "", "", ""]);
+            rows.push([...base, "", "", "", "", "", "", "", ""]);
           } else {
             studentDates.forEach((d) => {
               const att = classAttendance[d]?.[s.id];
@@ -15600,6 +15962,7 @@
                 j?.mood ? MOOD_LABEL[j.mood] : "",
                 j?.meal ? MEAL_LABEL[j.meal] : "",
                 j?.nap ? NAP_LABEL[j.nap] : "",
+                j?.activities && j.activities.length ? j.activities.map((k) => ACTIVITY_LABEL[k]).join("\u3001") : "",
                 j?.note || ""
               ]);
             });
