@@ -13023,11 +13023,28 @@
     return `${Math.floor(mins / 60)} \u5C0F\u6642 ${mins % 60} \u5206`;
   };
   var LEAVE_PERIOD_LABEL = { full: "\u5168\u5929", am: "\u4E0A\u534A\u5929", pm: "\u4E0B\u534A\u5929" };
+  var DAYTYPE_LABEL = { off: "\u4F11\u5047", annual: "\u7279\u4F11", personal: "\u4E8B\u5047", sick: "\u75C5\u5047" };
+  var DAYTYPE_COLOR = {
+    off: { bg: "#eee", fg: T.sub },
+    annual: { bg: T.accentSoft, fg: T.accentDeep },
+    personal: { bg: T.amberSoft, fg: T.amber },
+    sick: { bg: T.roseSoft, fg: T.roseDeep }
+  };
+  var isDayTypeCode = (code) => Object.prototype.hasOwnProperty.call(DAYTYPE_LABEL, code);
   var leaveCheckInFloor = (shift, leavePeriod) => leavePeriod === "am" ? shift ? shift.breakEnd : DEFAULT_BREAK_END : null;
   var leaveCheckOutFloor = (shift, leavePeriod) => leavePeriod === "pm" ? shift ? shift.breakStart : DEFAULT_BREAK_START : shift ? shift.end : null;
-  var shiftForDate = (account, dateKey, teacherSchedule) => {
+  var scheduleCodeForDate = (account, dateKey, teacherSchedule) => {
     const override = account ? teacherSchedule[account.username]?.[dateKey] : null;
-    return SHIFT_MAP[override || account?.shiftKey];
+    if (override) return override;
+    const d = parseIsoLocal(dateKey);
+    const dow = d.getDay();
+    if (dow === 0 || dow === 6) return "off";
+    return account?.shiftKey || null;
+  };
+  var shiftForDate = (account, dateKey, teacherSchedule) => {
+    const code = scheduleCodeForDate(account, dateKey, teacherSchedule);
+    if (!code || isDayTypeCode(code)) return null;
+    return SHIFT_MAP[code];
   };
   var seedAccounts = [
     {
@@ -16300,6 +16317,8 @@
     const todayKey = isoDate(/* @__PURE__ */ new Date());
     const myTodayRec = staffAttendance[account.username]?.[todayKey];
     const myShift = shiftForDate(account, todayKey, teacherSchedule);
+    const myScheduleCode = scheduleCodeForDate(account, todayKey, teacherSchedule);
+    const isDayOffToday = myScheduleCode && isDayTypeCode(myScheduleCode);
     const approvedLeaveToday = (approvals || []).find(
       (a) => a.type === "leave" && a.status === "approved" && a.leaveDate === todayKey && isOwnApproval(a, account)
     );
@@ -16429,6 +16448,7 @@
       notify("\u5DF2\u66F4\u65B0\u767B\u5165\u5E33\u865F\u5BC6\u78BC");
     };
     const teacherAccounts = accounts.filter((a) => a.role === "teacher");
+    const schedulableAccounts = accounts;
     const [manageOpen, setManageOpen] = (0, import_react.useState)(false);
     const [editUsername, setEditUsername] = (0, import_react.useState)(null);
     const [acctDraft, setAcctDraft] = (0, import_react.useState)(null);
@@ -16667,6 +16687,28 @@
       !editing && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionTitle, { children: "\u672C\u65E5\u7C3D\u5230" }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(SectionCard, { style: { padding: "14px", marginBottom: 20 }, children: [
+          isDayOffToday && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+            "div",
+            {
+              style: {
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                background: DAYTYPE_COLOR[myScheduleCode].bg,
+                borderRadius: 10,
+                padding: "9px 11px",
+                marginBottom: 10
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CalendarIcon, { size: 15, color: DAYTYPE_COLOR[myScheduleCode].fg, style: { flexShrink: 0 } }),
+                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 12.5, color: DAYTYPE_COLOR[myScheduleCode].fg, lineHeight: 1.5 }, children: [
+                  "\u4ECA\u5929\u6392\u5B9A\u70BA\u300C",
+                  DAYTYPE_LABEL[myScheduleCode],
+                  "\u300D\uFF0C\u975E\u4E0A\u73ED\u65E5"
+                ] })
+              ]
+            }
+          ),
           myShift && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 12, color: T.sub, marginBottom: 10, lineHeight: 1.6 }, children: [
             "\u73ED\u5225\uFF1A",
             myShift.label,
@@ -16999,11 +17041,11 @@
               );
             })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionTitle, { children: "\u8001\u5E2B\u6708\u6392\u73ED" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionTitle, { children: "\u6559\u8077\u54E1\u6708\u6392\u73ED" }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(SectionCard, { style: { padding: "13px 14px", marginBottom: 20 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 12.5, color: T.sub, marginBottom: 12, lineHeight: 1.5 }, children: "\u8001\u5E2B\u6BCF\u5929\u7684\u73ED\u5225\u53EF\u80FD\u4E0D\u540C\uFF0C\u9EDE\u9078\u65E5\u671F\u5373\u53EF\u6307\u6D3E\u7576\u5929\u73ED\u5225\uFF1B\u672A\u7279\u5225\u6307\u6D3E\u7684\u65E5\u5B50\u5957\u7528\u5E33\u865F\u9810\u8A2D\u73ED\u5225\u3002" }),
-            teacherAccounts.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 13, color: T.faint }, children: "\u9084\u6C92\u6709\u8001\u5E2B\u5E33\u865F" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, marginBottom: 12 }, children: teacherAccounts.map((a) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 12.5, color: T.sub, marginBottom: 12, lineHeight: 1.5 }, children: "\u6BCF\u5929\u7684\u73ED\u5225\u53EF\u80FD\u4E0D\u540C\uFF0C\u9EDE\u9078\u65E5\u671F\u5373\u53EF\u6307\u6D3E\u7576\u5929\u73ED\u5225\u6216\u5047\u5225\uFF1B\u672A\u7279\u5225\u6307\u6D3E\u7684\u5E73\u65E5\u5957\u7528\u5E33\u865F\u9810\u8A2D\u73ED\u5225\uFF0C\u516D\u3001\u65E5\u9810\u8A2D\u70BA\u4F11\u5047\u3002" }),
+            schedulableAccounts.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 13, color: T.faint }, children: "\u9084\u6C92\u6709\u6559\u8077\u54E1\u5E33\u865F" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, marginBottom: 12 }, children: schedulableAccounts.map((a) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
                 "button",
                 {
                   onClick: () => setScheduleTeacherUsername(a.username),
@@ -17016,17 +17058,20 @@
                     borderRadius: 20,
                     cursor: "pointer",
                     flexShrink: 0,
-                    border: `1px solid ${(scheduleTeacherUsername || teacherAccounts[0].username) === a.username ? T.accent : T.line}`,
-                    background: (scheduleTeacherUsername || teacherAccounts[0].username) === a.username ? T.accentSoft : "#fff",
-                    color: (scheduleTeacherUsername || teacherAccounts[0].username) === a.username ? T.accentDeep : T.sub
+                    border: `1px solid ${(scheduleTeacherUsername || schedulableAccounts[0].username) === a.username ? T.accent : T.line}`,
+                    background: (scheduleTeacherUsername || schedulableAccounts[0].username) === a.username ? T.accentSoft : "#fff",
+                    color: (scheduleTeacherUsername || schedulableAccounts[0].username) === a.username ? T.accentDeep : T.sub
                   },
-                  children: a.name
+                  children: [
+                    a.name,
+                    a.role === "principal" ? "\uFF08\u5712\u9577\uFF09" : ""
+                  ]
                 },
                 a.username
               )) }),
               (() => {
-                const activeUsername = scheduleTeacherUsername || teacherAccounts[0].username;
-                const activeAcct = teacherAccounts.find((a) => a.username === activeUsername);
+                const activeUsername = scheduleTeacherUsername || schedulableAccounts[0].username;
+                const activeAcct = schedulableAccounts.find((a) => a.username === activeUsername);
                 return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
                   /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }, children: [
                     /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
@@ -17060,7 +17105,11 @@
                   /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", rowGap: 3 }, children: buildMonthGrid(scheduleViewMonth).map(({ date, inMonth }) => {
                     const key = isoDate(date);
                     const override = teacherSchedule[activeUsername]?.[key];
-                    const effShift = SHIFT_MAP[override || activeAcct.shiftKey];
+                    const code = scheduleCodeForDate(activeAcct, key, teacherSchedule);
+                    const isDayType = code && isDayTypeCode(code);
+                    const effShift = isDayType ? null : SHIFT_MAP[code];
+                    const badgeLabel = isDayType ? DAYTYPE_LABEL[code] : effShift ? effShift.label : "\u2014";
+                    const badgeColor = isDayType ? DAYTYPE_COLOR[code] : { bg: override ? T.rose : T.accentSoft, fg: override ? "#fff" : T.accentDeep };
                     const isToday = key === todayKey;
                     return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
                       "button",
@@ -17102,15 +17151,16 @@
                             "span",
                             {
                               style: {
-                                fontSize: 8.5,
+                                fontSize: 8,
                                 fontWeight: 700,
                                 padding: "1px 4px",
                                 borderRadius: 6,
-                                background: !inMonth ? "transparent" : override ? T.rose : T.accentSoft,
-                                color: !inMonth ? "transparent" : override ? "#fff" : T.accentDeep,
-                                visibility: inMonth && effShift ? "visible" : "hidden"
+                                whiteSpace: "nowrap",
+                                background: !inMonth ? "transparent" : badgeColor.bg,
+                                color: !inMonth ? "transparent" : badgeColor.fg,
+                                visibility: inMonth && code ? "visible" : "hidden"
                               },
-                              children: effShift ? effShift.label.slice(0, 1) : "\u2014"
+                              children: isDayType ? badgeLabel : badgeLabel.slice(0, 1)
                             }
                           )
                         ]
@@ -17118,7 +17168,7 @@
                       key
                     );
                   }) }),
-                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 11, color: T.faint, marginTop: 8 }, children: "\u7C89\u7D05\u8272\u6A19\u7C64\uFF1D\u500B\u5225\u6307\u6D3E\u7576\u5929\u73ED\u5225\uFF1B\u6DFA\u85CD\u8272\u6A19\u7C64\uFF1D\u5957\u7528\u5E33\u865F\u9810\u8A2D\u73ED\u5225" })
+                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 11, color: T.faint, marginTop: 8, lineHeight: 1.6 }, children: "\u7C89\u7D05\u8272\u5B57\u6BCD\uFF1D\u500B\u5225\u6307\u6D3E\u7576\u5929\u73ED\u5225\uFF1B\u6DFA\u85CD\u8272\u5B57\u6BCD\uFF1D\u5957\u7528\u5E33\u865F\u9810\u8A2D\u73ED\u5225\uFF1B\u7070\uFF0F\u9EC3\uFF0F\u7D05\u8272\u6587\u5B57\uFF1D\u4F11\u5047\u3001\u7279\u4F11\u3001\u4E8B\u5047\u3001\u75C5\u5047" })
                 ] });
               })()
             ] })
@@ -17345,11 +17395,14 @@
         }
       ),
       scheduleDayFor && (() => {
-        const activeUsername = scheduleTeacherUsername || teacherAccounts[0]?.username;
-        const activeAcct = teacherAccounts.find((a) => a.username === activeUsername);
+        const activeUsername = scheduleTeacherUsername || schedulableAccounts[0]?.username;
+        const activeAcct = schedulableAccounts.find((a) => a.username === activeUsername);
         if (!activeAcct) return null;
         const d = parseIsoLocal(scheduleDayFor);
+        const dow = d.getDay();
+        const isWeekend = dow === 0 || dow === 6;
         const currentOverride = teacherSchedule[activeUsername]?.[scheduleDayFor] || "";
+        const defaultLabel = isWeekend ? "\u4F11\u5047\uFF08\u516D\u3001\u65E5\u9810\u8A2D\uFF09" : SHIFT_MAP[activeAcct.shiftKey] ? `${SHIFT_MAP[activeAcct.shiftKey].label}\uFF08${SHIFT_MAP[activeAcct.shiftKey].start}\u2013${SHIFT_MAP[activeAcct.shiftKey].end}\uFF0C\u5E33\u865F\u9810\u8A2D\uFF09` : "\u672A\u8A2D\u5B9A";
         const setDayShift = (val) => {
           setTeacherSchedule((prev) => {
             const userSched = { ...prev[activeUsername] || {} };
@@ -17357,75 +17410,59 @@
             else userSched[scheduleDayFor] = val;
             return { ...prev, [activeUsername]: userSched };
           });
-          notify(val ? "\u5DF2\u6307\u6D3E\u7576\u5929\u73ED\u5225" : "\u5DF2\u6539\u56DE\u5957\u7528\u9810\u8A2D\u73ED\u5225");
+          notify(val ? "\u5DF2\u6307\u6D3E\u7576\u5929\u6392\u73ED" : "\u5DF2\u6539\u56DE\u5957\u7528\u9810\u8A2D\u6392\u73ED");
           setScheduleDayFor(null);
         };
+        const OptionBtn = ({ active, onClick, children }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+          "button",
+          {
+            onClick,
+            style: {
+              ...heading,
+              fontWeight: 700,
+              fontSize: 13.5,
+              padding: "11px 14px",
+              borderRadius: 10,
+              cursor: "pointer",
+              textAlign: "left",
+              border: `1px solid ${active ? T.accent : T.line}`,
+              background: active ? T.accentSoft : "#fff",
+              color: active ? T.accentDeep : T.ink
+            },
+            children
+          }
+        );
         return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
           Sheet,
           {
-            title: `${activeAcct.name}\u30FB${d.getFullYear()}/${mdLabel(d)} \u73ED\u5225`,
+            title: `${activeAcct.name}\u30FB${d.getFullYear()}/${mdLabel(d)}\uFF08${WEEKDAY_LABELS[(dow + 6) % 7]}\uFF09`,
             onClose: () => setScheduleDayFor(null),
             children: [
               /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 12.5, color: T.sub, marginBottom: 14 }, children: [
-                "\u76EE\u524D\u5E33\u865F\u9810\u8A2D\u73ED\u5225\u70BA\u300C",
-                SHIFT_MAP[activeAcct.shiftKey]?.label || "\u672A\u8A2D\u5B9A",
-                "\u300D\uFF0C\u53EF\u70BA\u9019\u4E00\u5929\u55AE\u7368\u6307\u6D3E\u4E0D\u540C\u73ED\u5225\u3002"
+                "\u76EE\u524D\u9810\u8A2D\u70BA\u300C",
+                defaultLabel,
+                "\u300D\uFF0C\u53EF\u70BA\u9019\u4E00\u5929\u55AE\u7368\u6307\u6D3E\u73ED\u5225\u6216\u5047\u5225\u3002"
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: 8 }, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
-                  "button",
-                  {
-                    onClick: () => setDayShift(""),
-                    style: {
-                      ...heading,
-                      fontWeight: 700,
-                      fontSize: 13.5,
-                      padding: "11px 14px",
-                      borderRadius: 10,
-                      cursor: "pointer",
-                      textAlign: "left",
-                      border: `1px solid ${!currentOverride ? T.accent : T.line}`,
-                      background: !currentOverride ? T.accentSoft : "#fff",
-                      color: !currentOverride ? T.accentDeep : T.ink
-                    },
-                    children: [
-                      "\u5957\u7528\u5E33\u865F\u9810\u8A2D\u73ED\u5225",
-                      SHIFT_MAP[activeAcct.shiftKey] ? `\uFF08${SHIFT_MAP[activeAcct.shiftKey].label} ${SHIFT_MAP[activeAcct.shiftKey].start}\u2013${SHIFT_MAP[activeAcct.shiftKey].end}\uFF09` : ""
-                    ]
-                  }
-                ),
-                SHIFT_OPTIONS.map((s) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
-                  "button",
-                  {
-                    onClick: () => setDayShift(s.key),
-                    style: {
-                      ...heading,
-                      fontWeight: 700,
-                      fontSize: 13.5,
-                      padding: "11px 14px",
-                      borderRadius: 10,
-                      cursor: "pointer",
-                      textAlign: "left",
-                      border: `1px solid ${currentOverride === s.key ? T.accent : T.line}`,
-                      background: currentOverride === s.key ? T.accentSoft : "#fff",
-                      color: currentOverride === s.key ? T.accentDeep : T.ink
-                    },
-                    children: [
-                      s.label,
-                      "\uFF08",
-                      s.start,
-                      "\u2013",
-                      s.end,
-                      "\uFF0C\u4F11\u606F ",
-                      s.breakStart,
-                      "\u2013",
-                      s.breakEnd,
-                      "\uFF09"
-                    ]
-                  },
-                  s.key
-                ))
-              ] })
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(OptionBtn, { active: !currentOverride, onClick: () => setDayShift(""), children: [
+                "\u5957\u7528\u9810\u8A2D\uFF08",
+                defaultLabel,
+                "\uFF09"
+              ] }) }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...heading, fontSize: 12, fontWeight: 600, color: T.sub, marginBottom: 8 }, children: "\u5DE5\u4F5C\u73ED\u5225" }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }, children: SHIFT_OPTIONS.map((s) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(OptionBtn, { active: currentOverride === s.key, onClick: () => setDayShift(s.key), children: [
+                s.label,
+                "\uFF08",
+                s.start,
+                "\u2013",
+                s.end,
+                "\uFF0C\u4F11\u606F ",
+                s.breakStart,
+                "\u2013",
+                s.breakEnd,
+                "\uFF09"
+              ] }, s.key)) }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...heading, fontSize: 12, fontWeight: 600, color: T.sub, marginBottom: 8 }, children: "\u5047\u5225" }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "flex", flexDirection: "column", gap: 8 }, children: Object.keys(DAYTYPE_LABEL).map((k) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(OptionBtn, { active: currentOverride === k, onClick: () => setDayShift(k), children: DAYTYPE_LABEL[k] }, k)) })
             ]
           }
         );
