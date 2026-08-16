@@ -12999,6 +12999,36 @@
     { id: "rose", name: "\u73AB\u7470\u73ED\uFF08\u5927\u73ED\uFF09", icon: "flower" }
   ];
   var ROLE_LABEL = { principal: "\u5712\u9577", teacher: "\u8001\u5E2B" };
+  var SHIFT_OPTIONS = [
+    { key: "A", label: "\u65E9\u73ED", start: "07:20", end: "17:00", breakStart: "11:20", breakEnd: "13:20", workMinutes: 480 },
+    { key: "B", label: "\u4E2D\u73ED", start: "08:00", end: "17:30", breakStart: "12:00", breakEnd: "14:00", workMinutes: 480 },
+    { key: "C", label: "\u665A\u73ED", start: "08:30", end: "18:00", breakStart: "12:30", breakEnd: "14:30", workMinutes: 480 }
+  ];
+  var SHIFT_MAP = Object.fromEntries(SHIFT_OPTIONS.map((s) => [s.key, s]));
+  var DEFAULT_BREAK_START = "12:00";
+  var DEFAULT_BREAK_END = "14:00";
+  var BREAK_MINUTES = 120;
+  var scheduledWorkMinutes = (shift, leavePeriod) => {
+    const fullDay = shift ? shift.workMinutes : 480;
+    if (leavePeriod === "full") return 0;
+    if (leavePeriod === "am" || leavePeriod === "pm") return fullDay / 2;
+    return fullDay;
+  };
+  var nowHM = () => {
+    const d = /* @__PURE__ */ new Date();
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  };
+  var fmtHM = (mins) => {
+    if (mins == null || mins < 0) return "\u2014";
+    return `${Math.floor(mins / 60)} \u5C0F\u6642 ${mins % 60} \u5206`;
+  };
+  var LEAVE_PERIOD_LABEL = { full: "\u5168\u5929", am: "\u4E0A\u534A\u5929", pm: "\u4E0B\u534A\u5929" };
+  var leaveCheckInFloor = (shift, leavePeriod) => leavePeriod === "am" ? shift ? shift.breakEnd : DEFAULT_BREAK_END : null;
+  var leaveCheckOutFloor = (shift, leavePeriod) => leavePeriod === "pm" ? shift ? shift.breakStart : DEFAULT_BREAK_START : shift ? shift.end : null;
+  var shiftForDate = (account, dateKey, teacherSchedule) => {
+    const override = account ? teacherSchedule[account.username]?.[dateKey] : null;
+    return SHIFT_MAP[override || account?.shiftKey];
+  };
   var seedAccounts = [
     {
       id: 1,
@@ -13008,6 +13038,7 @@
       name: "\u6797\u6DD1\u82AC",
       phone: "0911-000-000",
       classIds: [],
+      shiftKey: "B",
       hireDate: "2015/08",
       email: "principal@shusheng.edu.tw",
       address: "\u65B0\u7AF9\u7E23\u7AF9\u5317\u5E02\u5149\u660E\u516D\u8DEF 88 \u865F",
@@ -13022,6 +13053,7 @@
       name: "\u9673\u96C5\u5A77",
       phone: "0912-345-678",
       classIds: ["sun"],
+      shiftKey: "A",
       hireDate: "2020/08",
       email: "chen.yating@shusheng.edu.tw",
       address: "\u65B0\u7AF9\u7E23\u7AF9\u5317\u5E02\u4E2D\u6B63\u897F\u8DEF 21 \u865F",
@@ -13036,6 +13068,7 @@
       name: "\u6797\u4FCA\u5091",
       phone: "0923-667-889",
       classIds: ["dan"],
+      shiftKey: "B",
       hireDate: "2021/02",
       email: "lin.junjie@shusheng.edu.tw",
       address: "\u65B0\u7AF9\u7E23\u7AF9\u5317\u5E02\u7E23\u653F\u4E8C\u8DEF 15 \u865F",
@@ -13050,6 +13083,7 @@
       name: "\u9EC3\u6DD1\u82AC",
       phone: "0977-445-112",
       classIds: ["dan", "rose"],
+      shiftKey: "C",
       hireDate: "2018/09",
       email: "huang.shufen@shusheng.edu.tw",
       address: "\u65B0\u7AF9\u7E23\u7AF9\u5317\u5E02\u5149\u660E\u4E00\u8DEF 60 \u865F",
@@ -13216,6 +13250,9 @@
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  }
+  function escapeHtml(s) {
+    return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   }
   var TAG_COLOR = {
     \u5168\u5712: { bg: T.accentSoft, fg: T.accentDeep },
@@ -13561,27 +13598,50 @@
     const [journals, setJournals] = (0, import_react.useState)({});
     const [classJournals, setClassJournals] = (0, import_react.useState)({});
     const [staffAttendance, setStaffAttendance] = (0, import_react.useState)({});
-    const staffCheckIn = (username) => {
+    const [teacherSchedule, setTeacherSchedule] = (0, import_react.useState)({});
+    const staffPunch = (username) => {
       const now = /* @__PURE__ */ new Date();
       const time = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
       const key = isoDate(now);
+      const acct = accounts.find((a) => a.username === username);
+      const shift = acct ? shiftForDate(acct, key, teacherSchedule) : null;
+      const leaveToday = approvals.find(
+        (a) => a.type === "leave" && a.status === "approved" && a.leaveDate === key && isOwnApproval(a, acct)
+      );
+      const leavePeriod = leaveToday?.leavePeriod || null;
+      let punched = null;
+      let blockedMsg = null;
       setStaffAttendance((prev) => {
         const userRec = prev[username] || {};
         const dayRec = userRec[key] || {};
-        return { ...prev, [username]: { ...userRec, [key]: { ...dayRec, checkIn: time } } };
+        const field = !dayRec.checkIn ? "checkIn" : !dayRec.checkOut ? "checkOut" : null;
+        if (!field) return prev;
+        if (leavePeriod === "full") {
+          blockedMsg = "\u4ECA\u65E5\u8ACB\u5047\u4E2D\uFF0C\u66AB\u505C\u7C3D\u5230\uFF0F\u7C3D\u9000\u529F\u80FD";
+          return prev;
+        }
+        if (field === "checkIn") {
+          const floor = leaveCheckInFloor(shift, leavePeriod);
+          if (floor && time < floor) {
+            blockedMsg = `\u5C1A\u672A\u5230\u53EF\u7C3D\u5230\u6642\u9593\uFF08${floor}\uFF09`;
+            return prev;
+          }
+        }
+        if (field === "checkOut") {
+          const floor = leaveCheckOutFloor(shift, leavePeriod);
+          if (floor && time < floor) {
+            blockedMsg = `\u5C1A\u672A\u5230\u4E0B\u73ED\u6642\u9593\uFF08${floor}\uFF09\uFF0C\u7121\u6CD5\u63D0\u524D\u7C3D\u9000`;
+            return prev;
+          }
+        }
+        punched = field;
+        return { ...prev, [username]: { ...userRec, [key]: { ...dayRec, [field]: time } } };
       });
-      notify(`\u5DF2\u7C3D\u5230\u30FB${time}`);
-    };
-    const staffCheckOut = (username) => {
-      const now = /* @__PURE__ */ new Date();
-      const time = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
-      const key = isoDate(now);
-      setStaffAttendance((prev) => {
-        const userRec = prev[username] || {};
-        const dayRec = userRec[key] || {};
-        return { ...prev, [username]: { ...userRec, [key]: { ...dayRec, checkOut: time } } };
-      });
-      notify(`\u5DF2\u7C3D\u9000\u30FB${time}`);
+      if (blockedMsg) {
+        notify(blockedMsg);
+      } else if (punched) {
+        notify(`\u5DF2${punched === "checkIn" ? "\u7C3D\u5230" : "\u7C3D\u9000"}\u30FB${time}`);
+      }
     };
     const [approvals, setApprovals] = (0, import_react.useState)(seedApprovals);
     const [menuByDate, setMenuByDate] = (0, import_react.useState)(buildSeedMenu);
@@ -13734,7 +13794,7 @@
                   goClass: () => setTab("class")
                 }
               ),
-              tab === "approval" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ApprovalTab, { role, account, classes, approvals: myApprovals, setApprovals, notify }),
+              tab === "approval" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ApprovalTab, { role, account, classes, approvals: myApprovals, setApprovals, notify, teacherSchedule }),
               tab === "class" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
                 ClassTab,
                 {
@@ -13753,7 +13813,7 @@
                   notify
                 }
               ),
-              tab === "menu" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MenuTab, { role, menuByDate, setMenuByDate, notify }),
+              tab === "menu" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MenuTab, { role, menuByDate, setMenuByDate, notify, schoolName }),
               tab === "me" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
                 MeTab,
                 {
@@ -13770,12 +13830,13 @@
                   onCredentialsChanged: updateSessionUsername,
                   staffAttendance,
                   setStaffAttendance,
-                  onCheckIn: () => staffCheckIn(account.username),
-                  onCheckOut: () => staffCheckOut(account.username),
+                  onPunch: () => staffPunch(account.username),
                   studentsByClass,
                   attendance,
                   journals,
-                  approvals: myApprovals
+                  approvals: myApprovals,
+                  teacherSchedule,
+                  setTeacherSchedule
                 }
               )
             ] }),
@@ -14488,7 +14549,7 @@
   function EmptyRow({ text }) {
     return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { padding: "22px 14px", textAlign: "center", fontSize: 13, color: T.faint }, children: text });
   }
-  function ApprovalTab({ role, account, classes, approvals, setApprovals, notify }) {
+  function ApprovalTab({ role, account, classes, approvals, setApprovals, notify, teacherSchedule }) {
     const isPrincipal = role === "principal";
     const myClassNames = classNamesFor(account?.classIds, classes);
     const myIdentity = isPrincipal ? account.name : `${account.name} \u8001\u5E2B\uFF08${myClassNames.join("\u3001") || "\u672A\u5206\u914D\u73ED\u7D1A"}\uFF09`;
@@ -14496,8 +14557,10 @@
     const [selectedId, setSelectedId] = (0, import_react.useState)(null);
     const [addOpen, setAddOpen] = (0, import_react.useState)(false);
     const todayKeyForLeave = isoDate(/* @__PURE__ */ new Date());
-    const [draft, setDraft] = (0, import_react.useState)({ type: "leave", applicant: myIdentity, summary: "", leaveDate: todayKeyForLeave, leaveStart: "", leaveEnd: "", reason: "" });
+    const [draft, setDraft] = (0, import_react.useState)({ type: "leave", applicant: myIdentity, summary: "", leaveDate: todayKeyForLeave, leavePeriod: "full", reason: "" });
     const [confirmWithdraw, setConfirmWithdraw] = (0, import_react.useState)(false);
+    const [datePickerOpen, setDatePickerOpen] = (0, import_react.useState)(false);
+    const [datePickerMonth, setDatePickerMonth] = (0, import_react.useState)(/* @__PURE__ */ new Date());
     const filtered = approvals.filter((a) => {
       if (filter === "pending") return a.status === "pending";
       if (filter === "done") return a.status !== "pending";
@@ -14522,8 +14585,7 @@
         if (!draft.reason.trim()) return notify("\u8ACB\u586B\u5BEB\u8ACB\u5047\u539F\u56E0");
         const d = parseIsoLocal(draft.leaveDate);
         const dateLabel = `${d.getMonth() + 1}/${d.getDate()}`;
-        const timeLabel = draft.leaveStart && draft.leaveEnd ? `${draft.leaveStart}\u2013${draft.leaveEnd}` : "\u5168\u5929";
-        const summary = `${dateLabel}\uFF08${timeLabel}\uFF09\u30FB${draft.reason.trim()}`;
+        const summary = `${dateLabel}\uFF08${LEAVE_PERIOD_LABEL[draft.leavePeriod]}\uFF09\u30FB${draft.reason.trim()}`;
         setApprovals((list) => [
           {
             id: uid(),
@@ -14532,8 +14594,7 @@
             applicant: draft.applicant.trim(),
             date: todayStr(),
             leaveDate: draft.leaveDate,
-            leaveStart: draft.leaveStart,
-            leaveEnd: draft.leaveEnd,
+            leavePeriod: draft.leavePeriod,
             reason: draft.reason.trim(),
             summary,
             status: "pending"
@@ -14547,7 +14608,7 @@
           ...list
         ]);
       }
-      setDraft({ type: "leave", applicant: myIdentity, summary: "", leaveDate: todayKeyForLeave, leaveStart: "", leaveEnd: "", reason: "" });
+      setDraft({ type: "leave", applicant: myIdentity, summary: "", leaveDate: todayKeyForLeave, leavePeriod: "full", reason: "" });
       setAddOpen(false);
       notify("\u5DF2\u9001\u51FA\u7533\u8ACB");
     };
@@ -14675,15 +14736,139 @@
         )) }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u7533\u8ACB\u4EBA", value: draft.applicant, onChange: (v) => setDraft({ ...draft, applicant: v }), placeholder: "\u4F8B\u5982\uFF1A\u9673\u96C5\u5A77 \u8001\u5E2B\uFF08\u5411\u65E5\u8475\u73ED\uFF09" }),
         draft.type === "leave" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u8ACB\u5047\u65E5\u671F", value: draft.leaveDate, onChange: (v) => setDraft({ ...draft, leaveDate: v }), placeholder: "YYYY-MM-DD" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 10 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { flex: 1 }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u958B\u59CB\u6642\u9593\uFF08\u7559\u7A7A\uFF1D\u5168\u5929\uFF09", value: draft.leaveStart, onChange: (v) => setDraft({ ...draft, leaveStart: v }), placeholder: "09:00" }) }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { flex: 1 }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u7D50\u675F\u6642\u9593", value: draft.leaveEnd, onChange: (v) => setDraft({ ...draft, leaveEnd: v }), placeholder: "12:00" }) })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u8ACB\u5047\u539F\u56E0", value: draft.reason, onChange: (v) => setDraft({ ...draft, reason: v }), placeholder: "\u4F8B\u5982\uFF1A\u611F\u5192\u9700\u5C31\u91AB\u3001\u5BB6\u4E2D\u6709\u4E8B", textarea: true }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 11.5, color: T.sub, marginBottom: 14, lineHeight: 1.5 }, children: "\u6838\u51C6\u5F8C\uFF0C\u8A72\u65E5\u5C07\u81EA\u52D5\u505C\u7528\u60A8\u7684\u7C3D\u5230\uFF0F\u7C3D\u9000\u529F\u80FD\u3002" })
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...heading, fontSize: 12, fontWeight: 600, color: T.sub, marginBottom: 5 }, children: "\u8ACB\u5047\u65E5\u671F" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+            "button",
+            {
+              onClick: () => {
+                setDatePickerMonth(draft.leaveDate ? parseIsoLocal(draft.leaveDate) : /* @__PURE__ */ new Date());
+                setDatePickerOpen(true);
+              },
+              style: {
+                ...body,
+                width: "100%",
+                boxSizing: "border-box",
+                fontSize: 14,
+                padding: "9px 11px",
+                borderRadius: 8,
+                border: `1px solid ${T.line}`,
+                background: "#fff",
+                color: T.ink,
+                marginBottom: 12,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                cursor: "pointer",
+                textAlign: "left"
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: draft.leaveDate ? (() => {
+                  const d = parseIsoLocal(draft.leaveDate);
+                  return `${d.getFullYear()} \u5E74 ${d.getMonth() + 1} \u6708 ${d.getDate()} \u65E5\uFF08${WEEKDAY_LABELS[(d.getDay() + 6) % 7]}\uFF09`;
+                })() : "\u8ACB\u9078\u64C7\u65E5\u671F" }),
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CalendarIcon, { size: 16, color: T.sub })
+              ]
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...heading, fontSize: 12, fontWeight: 600, color: T.sub, marginBottom: 8 }, children: "\u8ACB\u5047\u6642\u6BB5" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+            ChoiceGroup,
+            {
+              options: ["full", "am", "pm"],
+              labels: LEAVE_PERIOD_LABEL,
+              value: draft.leavePeriod,
+              onChange: (v) => setDraft({ ...draft, leavePeriod: v })
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 11.5, color: T.sub, marginBottom: 14, lineHeight: 1.5 }, children: (() => {
+            const shiftThatDay = shiftForDate(account, draft.leaveDate, teacherSchedule || {});
+            if (draft.leavePeriod === "am")
+              return `\u4E0A\u534A\u5929\u8ACB\u5047\uFF1A\u7576\u5929\u9700\u65BC ${shiftThatDay?.breakEnd || DEFAULT_BREAK_END} \u5F8C\u624D\u80FD\u7C3D\u5230\uFF0C\u4E0B\u5348\u6B63\u5E38\u4E0A\u73ED\u3002`;
+            if (draft.leavePeriod === "pm")
+              return `\u4E0B\u534A\u5929\u8ACB\u5047\uFF1A\u7576\u5929\u53EF\u65BC ${shiftThatDay?.breakStart || DEFAULT_BREAK_START} \u5F8C\u7C3D\u9000\uFF0C\u4E0A\u5348\u9700\u6B63\u5E38\u51FA\u52E4\u3002`;
+            return "\u5168\u5929\u8ACB\u5047\uFF1A\u6838\u51C6\u5F8C\u8A72\u65E5\u5C07\u81EA\u52D5\u505C\u7528\u7C3D\u5230\uFF0F\u7C3D\u9000\u529F\u80FD\u3002";
+          })() }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u8ACB\u5047\u539F\u56E0", value: draft.reason, onChange: (v) => setDraft({ ...draft, reason: v }), placeholder: "\u4F8B\u5982\uFF1A\u611F\u5192\u9700\u5C31\u91AB\u3001\u5BB6\u4E2D\u6709\u4E8B", textarea: true })
         ] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u5167\u5BB9\u8AAA\u660E", value: draft.summary, onChange: (v) => setDraft({ ...draft, summary: v }), placeholder: "\u8ACB\u7C21\u8FF0\u7533\u8ACB\u5167\u5BB9", textarea: true }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: addApproval, full: true, icon: Plus, children: "\u9001\u51FA\u7533\u8ACB" })
+      ] }),
+      datePickerOpen && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Sheet, { title: "\u9078\u64C7\u8ACB\u5047\u65E5\u671F", onClose: () => setDatePickerOpen(false), children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconBtn, { icon: ChevronLeft, tone: "line", size: 28, onClick: () => setDatePickerMonth((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1)), title: "\u4E0A\u500B\u6708" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { style: { ...heading, fontWeight: 700, fontSize: 15 }, children: [
+              datePickerMonth.getFullYear(),
+              " \u5E74 ",
+              datePickerMonth.getMonth() + 1,
+              " \u6708"
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+              "button",
+              {
+                onClick: () => setDatePickerMonth(/* @__PURE__ */ new Date()),
+                style: {
+                  ...heading,
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  color: T.accentDeep,
+                  background: T.accentSoft,
+                  border: "none",
+                  borderRadius: 14,
+                  padding: "4px 10px",
+                  cursor: "pointer"
+                },
+                children: "\u4ECA\u5929"
+              }
+            )
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconBtn, { icon: ChevronRight, tone: "line", size: 28, onClick: () => setDatePickerMonth((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1)), title: "\u4E0B\u500B\u6708" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", marginBottom: 4 }, children: WEEKDAY_LABELS.map((w) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { textAlign: "center", fontSize: 11, color: T.faint, ...heading, fontWeight: 600, padding: "4px 0" }, children: w.slice(1) }, w)) }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", rowGap: 3 }, children: buildMonthGrid(datePickerMonth).map(({ date, inMonth }) => {
+          const key = isoDate(date);
+          const isSelected = key === draft.leaveDate;
+          const isToday = key === todayKeyForLeave;
+          return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+            "button",
+            {
+              onClick: () => {
+                if (!inMonth) return;
+                setDraft({ ...draft, leaveDate: key });
+                setDatePickerOpen(false);
+              },
+              disabled: !inMonth,
+              style: {
+                ...heading,
+                aspectRatio: "1",
+                border: "none",
+                cursor: inMonth ? "pointer" : "default",
+                background: isSelected ? T.accent : "transparent",
+                borderRadius: 9,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: !inMonth ? T.faint : isSelected ? "#fff" : T.ink,
+                fontWeight: isToday && !isSelected ? 800 : 500,
+                fontSize: 13
+              },
+              children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                "span",
+                {
+                  style: {
+                    boxShadow: isToday && !isSelected ? `inset 0 0 0 1.5px ${T.accent}` : "none",
+                    borderRadius: "50%",
+                    width: 24,
+                    height: 24,
+                    display: "grid",
+                    placeItems: "center"
+                  },
+                  children: date.getDate()
+                }
+              )
+            },
+            key
+          );
+        }) })
       ] }),
       confirmWithdraw && selected && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
         ConfirmDialog,
@@ -15688,7 +15873,7 @@
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: value })
     ] });
   }
-  function MenuTab({ role, menuByDate, setMenuByDate, notify }) {
+  function MenuTab({ role, menuByDate, setMenuByDate, notify, schoolName }) {
     const canEdit = role === "principal";
     const today = /* @__PURE__ */ new Date();
     const [viewDate, setViewDate] = (0, import_react.useState)(new Date(today.getFullYear(), today.getMonth(), 1));
@@ -15738,9 +15923,112 @@
       if (editKey === key) setEditKey(null);
       notify("\u5DF2\u522A\u9664\u83DC\u55AE\u7D00\u9304");
     };
+    const [bulkOpen, setBulkOpen] = (0, import_react.useState)(false);
+    const [bulkDrafts, setBulkDrafts] = (0, import_react.useState)({});
+    const monthWeekdays = (viewMonth) => {
+      const year = viewMonth.getFullYear();
+      const month = viewMonth.getMonth();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const days = [];
+      for (let day = 1; day <= daysInMonth; day++) {
+        const d = new Date(year, month, day);
+        const dow = d.getDay();
+        if (dow !== 0 && dow !== 6) days.push(d);
+      }
+      return days;
+    };
+    const openBulk = () => {
+      const days = monthWeekdays(viewDate);
+      const drafts = {};
+      days.forEach((d) => {
+        const key = isoDate(d);
+        const existing = menuByDate[key];
+        drafts[key] = existing ? { ...existing } : { breakfast: "", lunch: "", snack: "" };
+      });
+      setBulkDrafts(drafts);
+      setBulkOpen(true);
+    };
+    const saveBulk = () => {
+      setMenuByDate((prev) => {
+        const next = { ...prev };
+        Object.entries(bulkDrafts).forEach(([key, val]) => {
+          const hasContent = val.breakfast.trim() || val.lunch.trim() || val.snack.trim();
+          if (hasContent) {
+            next[key] = { breakfast: val.breakfast.trim(), lunch: val.lunch.trim(), snack: val.snack.trim() };
+          } else {
+            delete next[key];
+          }
+        });
+        return next;
+      });
+      setBulkOpen(false);
+      notify("\u5DF2\u5132\u5B58\u672C\u6708\u83DC\u55AE");
+    };
+    const exportMenuForParents = () => {
+      const year = viewDate.getFullYear();
+      const month = viewDate.getMonth();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const rows = [];
+      for (let day = 1; day <= daysInMonth; day++) {
+        const d = new Date(year, month, day);
+        const key = isoDate(d);
+        const entry = menuByDate[key];
+        if (!entry) continue;
+        rows.push({ d, entry });
+      }
+      if (rows.length === 0) {
+        notify("\u672C\u6708\u5C1A\u7121\u83DC\u55AE\u8CC7\u6599\u53EF\u532F\u51FA");
+        return;
+      }
+      const win = window.open("", "_blank");
+      if (!win) {
+        notify("\u8ACB\u5141\u8A31\u700F\u89BD\u5668\u958B\u555F\u65B0\u8996\u7A97\u4EE5\u532F\u51FA");
+        return;
+      }
+      const bodyRows = rows.map(
+        ({ d, entry }) => `
+        <tr>
+          <td class="date">${d.getMonth() + 1}/${d.getDate()}<span class="dow">\uFF08${WEEKDAY_LABELS[(d.getDay() + 6) % 7]}\uFF09</span></td>
+          <td>${escapeHtml(entry.breakfast)}</td>
+          <td>${escapeHtml(entry.lunch)}</td>
+          <td>${escapeHtml(entry.snack)}</td>
+        </tr>`
+      ).join("");
+      win.document.write(`<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8" />
+<title>${escapeHtml(schoolName)} ${year}\u5E74${month + 1}\u6708\u83DC\u55AE</title>
+<style>
+  body { font-family: "PingFang TC","Microsoft JhengHei",-apple-system,sans-serif; color: #201e1d; padding: 32px; max-width: 720px; margin: 0 auto; }
+  h1 { font-family: "Noto Serif TC","Source Serif 4",Georgia,serif; font-size: 22px; margin-bottom: 2px; }
+  .sub { color: #7d7979; font-size: 13px; margin-bottom: 24px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { border: 1px solid #ddd; padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #f3f2f0; font-family: "Noto Serif TC",serif; }
+  .date { white-space: nowrap; font-weight: 700; }
+  .dow { font-weight: 400; color: #7d7979; font-size: 11.5px; }
+  @media print { body { padding: 0; } }
+</style></head>
+<body>
+  <h1>${escapeHtml(schoolName)}</h1>
+  <div class="sub">${year} \u5E74 ${month + 1} \u6708\u83DC\u55AE\uFF08\u5168\u5712\u7D71\u4E00\u4F9B\u9910\uFF09</div>
+  <table>
+    <thead><tr><th>\u65E5\u671F</th><th>\u65E9\u9910</th><th>\u5348\u9910</th><th>\u9EDE\u5FC3</th></tr></thead>
+    <tbody>${bodyRows}</tbody>
+  </table>
+</body></html>`);
+      win.document.close();
+      win.focus();
+      setTimeout(() => win.print(), 300);
+    };
     return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
       /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { marginBottom: 12 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionTitle, { noMargin: true, children: "\u83DC\u55AE\u65E5\u66C6" }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionTitle, { noMargin: true, children: "\u83DC\u55AE\u65E5\u66C6" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 6 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconBtn, { icon: Download, tone: "line", size: 28, onClick: exportMenuForParents, title: "\u532F\u51FA\u672C\u6708\u83DC\u55AE\u7D66\u5BB6\u9577" }),
+            canEdit && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconBtn, { icon: Plus, tone: "accent", size: 28, onClick: openBulk, title: "\u6574\u6708\u586B\u5BEB" })
+          ] })
+        ] }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 12.5, color: T.sub, marginTop: 4 }, children: "\u5168\u5712\u7D71\u4E00\u4F9B\u9910\uFF0C\u5404\u73ED\u7D1A\u5171\u7528\u540C\u4E00\u4EFD\u83DC\u55AE\u30FB\u9EDE\u9078\u65E5\u671F\u67E5\u770B\uFF0F\u5EFA\u7ACB\u7576\u9031\u7D00\u9304" })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(SectionCard, { style: { padding: "14px 14px 10px", marginBottom: 18 }, children: [
@@ -15936,10 +16224,50 @@
             setConfirmDeleteKey(null);
           }
         }
-      )
+      ),
+      bulkOpen && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Sheet, { title: `\u6574\u6708\u83DC\u55AE\u30FB${viewDate.getFullYear()} \u5E74 ${viewDate.getMonth() + 1} \u6708`, onClose: () => setBulkOpen(false), wide: true, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 12.5, color: T.sub, marginBottom: 14, lineHeight: 1.5 }, children: "\u4E00\u6B21\u586B\u5BEB\u672C\u6708\u6240\u6709\u5E73\u65E5\u7684\u83DC\u55AE\uFF0C\u7559\u7A7A\u7684\u65E5\u5B50\u4E0D\u6703\u5132\u5B58\u7D00\u9304\uFF0C\u53EF\u4E4B\u5F8C\u518D\u500B\u5225\u88DC\u4E0A\u3002" }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "flex", flexDirection: "column", gap: 14, maxHeight: "55vh", overflowY: "auto", marginBottom: 16, paddingRight: 2 }, children: Object.keys(bulkDrafts).map((key) => {
+          const d = parseIsoLocal(key);
+          const val = bulkDrafts[key];
+          return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(SectionCard, { style: { padding: "12px 14px" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { ...heading, fontWeight: 700, fontSize: 13.5, marginBottom: 8 }, children: [
+              mdLabel(d),
+              "\uFF08",
+              WEEKDAY_LABELS[(d.getDay() + 6) % 7],
+              "\uFF09"
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+              Field,
+              {
+                label: "\u65E9\u9910",
+                value: val.breakfast,
+                onChange: (v) => setBulkDrafts((prev) => ({ ...prev, [key]: { ...prev[key], breakfast: v } }))
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+              Field,
+              {
+                label: "\u5348\u9910",
+                value: val.lunch,
+                onChange: (v) => setBulkDrafts((prev) => ({ ...prev, [key]: { ...prev[key], lunch: v } }))
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+              Field,
+              {
+                label: "\u9EDE\u5FC3",
+                value: val.snack,
+                onChange: (v) => setBulkDrafts((prev) => ({ ...prev, [key]: { ...prev[key], snack: v } }))
+              }
+            )
+          ] }, key);
+        }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: saveBulk, icon: Save, full: true, children: "\u5132\u5B58\u672C\u6708\u83DC\u55AE" })
+      ] })
     ] });
   }
-  function MeTab({ account, accounts, setAccounts, classes, schoolName, setSchoolName, notifOn, setNotifOn, notify, onLogout, onCredentialsChanged, staffAttendance, setStaffAttendance, onCheckIn, onCheckOut, studentsByClass, attendance, journals, approvals }) {
+  function MeTab({ account, accounts, setAccounts, classes, schoolName, setSchoolName, notifOn, setNotifOn, notify, onLogout, onCredentialsChanged, staffAttendance, setStaffAttendance, onPunch, studentsByClass, attendance, journals, approvals, teacherSchedule, setTeacherSchedule }) {
     const renameStaffAttendanceKey = (oldUsername, newUsername) => {
       if (oldUsername === newUsername) return;
       setStaffAttendance((prev) => {
@@ -15954,6 +16282,11 @@
     const myClassNames = classNamesFor(account.classIds, classes);
     const roleLine = isPrincipal ? ROLE_LABEL.principal : myClassNames.length ? `${myClassNames.join("\u3001")}\u30FB${ROLE_LABEL.teacher}` : ROLE_LABEL.teacher;
     const [editing, setEditing] = (0, import_react.useState)(false);
+    const [, setClockTick] = (0, import_react.useState)(0);
+    (0, import_react.useEffect)(() => {
+      const id = setInterval(() => setClockTick((t) => t + 1), 3e4);
+      return () => clearInterval(id);
+    }, []);
     const [draft, setDraft] = (0, import_react.useState)({
       name: account.name,
       phone: account.phone,
@@ -15961,25 +16294,56 @@
       email: account.email || "",
       address: account.address || "",
       emergencyContact: account.emergencyContact || "",
-      note: account.note || ""
+      note: account.note || "",
+      shiftKey: account.shiftKey || ""
     });
     const todayKey = isoDate(/* @__PURE__ */ new Date());
     const myTodayRec = staffAttendance[account.username]?.[todayKey];
+    const myShift = shiftForDate(account, todayKey, teacherSchedule);
     const approvedLeaveToday = (approvals || []).find(
       (a) => a.type === "leave" && a.status === "approved" && a.leaveDate === todayKey && isOwnApproval(a, account)
     );
+    const leavePeriod = approvedLeaveToday?.leavePeriod || null;
+    const isFullDayLeave = leavePeriod === "full";
+    const nextPunch = !myTodayRec?.checkIn ? "checkIn" : !myTodayRec?.checkOut ? "checkOut" : null;
+    const workSummary = myTodayRec?.checkIn && myTodayRec?.checkOut ? { workMinutes: scheduledWorkMinutes(myShift, leavePeriod) } : null;
+    const checkInFloor = leaveCheckInFloor(myShift, leavePeriod);
+    const canCheckInNow = !checkInFloor || nowHM() >= checkInFloor;
+    const checkOutFloor = leaveCheckOutFloor(myShift, leavePeriod);
+    const canCheckOutNow = !checkOutFloor || nowHM() >= checkOutFloor;
     const [historyFor, setHistoryFor] = (0, import_react.useState)(null);
     const staffHistoryFor = (username) => Object.entries(staffAttendance[username] || {}).filter(([, rec]) => rec.checkIn || rec.checkOut).sort(([a], [b]) => a < b ? 1 : -1);
     const exportStaffAttendance = () => {
-      const rows = [["\u59D3\u540D", "\u89D2\u8272", "\u5E33\u865F", "\u65E5\u671F", "\u7C3D\u5230\u6642\u9593", "\u7C3D\u9000\u6642\u9593"]];
+      const rows = [["\u59D3\u540D", "\u89D2\u8272", "\u5E33\u865F", "\u7576\u65E5\u73ED\u5225", "\u65E5\u671F", "\u8ACB\u5047\u6642\u6BB5", "\u7C3D\u5230\u6642\u9593\uFF08\u53C3\u8003\uFF09", "\u7C3D\u9000\u6642\u9593\uFF08\u53C3\u8003\uFF09", "\u56FA\u5B9A\u4F11\u606F\uFF08\u5206\uFF09", "\u61C9\u8A08\u5DE5\u4F5C\u6642\u6578\uFF08\u5206\uFF09"]];
       accounts.forEach((a) => {
+        const defaultShift = SHIFT_MAP[a.shiftKey];
         const recs = staffAttendance[a.username] || {};
         const dates = Object.keys(recs).sort();
         if (dates.length === 0) {
-          rows.push([a.name, ROLE_LABEL[a.role], a.username, "", "", ""]);
+          const shiftLabel = defaultShift ? `${defaultShift.label}\uFF08${defaultShift.start}\u2013${defaultShift.end}\uFF09` : "";
+          rows.push([a.name, ROLE_LABEL[a.role], a.username, shiftLabel, "", "", "", "", "", ""]);
         } else {
           dates.forEach((d) => {
-            rows.push([a.name, ROLE_LABEL[a.role], a.username, d, recs[d].checkIn || "", recs[d].checkOut || ""]);
+            const r = recs[d];
+            const shift = shiftForDate(a, d, teacherSchedule);
+            const shiftLabel = shift ? `${shift.label}\uFF08${shift.start}\u2013${shift.end}\uFF09` : "";
+            const leaveForDate = approvals.find(
+              (ap) => ap.type === "leave" && ap.status === "approved" && ap.leaveDate === d && isOwnApproval(ap, a)
+            );
+            const leavePeriod2 = leaveForDate?.leavePeriod || null;
+            const workMin = r.checkIn && r.checkOut ? scheduledWorkMinutes(shift, leavePeriod2) : "";
+            rows.push([
+              a.name,
+              ROLE_LABEL[a.role],
+              a.username,
+              shiftLabel,
+              d,
+              leavePeriod2 ? LEAVE_PERIOD_LABEL[leavePeriod2] : "\u7121",
+              r.checkIn || "",
+              r.checkOut || "",
+              r.checkIn && r.checkOut ? BREAK_MINUTES : "",
+              workMin
+            ]);
           });
         }
       });
@@ -16034,7 +16398,8 @@
             email: draft.email,
             address: draft.address,
             emergencyContact: draft.emergencyContact,
-            note: draft.note
+            note: draft.note,
+            shiftKey: draft.shiftKey
           } : a
         )
       );
@@ -16068,6 +16433,9 @@
     const [editUsername, setEditUsername] = (0, import_react.useState)(null);
     const [acctDraft, setAcctDraft] = (0, import_react.useState)(null);
     const [addingAccount, setAddingAccount] = (0, import_react.useState)(false);
+    const [scheduleTeacherUsername, setScheduleTeacherUsername] = (0, import_react.useState)(null);
+    const [scheduleViewMonth, setScheduleViewMonth] = (0, import_react.useState)(/* @__PURE__ */ new Date());
+    const [scheduleDayFor, setScheduleDayFor] = (0, import_react.useState)(null);
     const [newAcct, setNewAcct] = (0, import_react.useState)({
       name: "",
       username: "",
@@ -16078,7 +16446,8 @@
       email: "",
       address: "",
       emergencyContact: "",
-      note: ""
+      note: "",
+      shiftKey: ""
     });
     const [confirmDeleteAcct, setConfirmDeleteAcct] = (0, import_react.useState)(null);
     const openEditAccount = (a) => {
@@ -16093,7 +16462,8 @@
         email: a.email || "",
         address: a.address || "",
         emergencyContact: a.emergencyContact || "",
-        note: a.note || ""
+        note: a.note || "",
+        shiftKey: a.shiftKey || ""
       });
       setAddingAccount(false);
     };
@@ -16115,7 +16485,8 @@
             email: acctDraft.email,
             address: acctDraft.address,
             emergencyContact: acctDraft.emergencyContact,
-            note: acctDraft.note
+            note: acctDraft.note,
+            shiftKey: acctDraft.shiftKey
           } : a
         )
       );
@@ -16145,10 +16516,11 @@
           email: newAcct.email,
           address: newAcct.address,
           emergencyContact: newAcct.emergencyContact,
-          note: newAcct.note
+          note: newAcct.note,
+          shiftKey: newAcct.shiftKey
         }
       ]);
-      setNewAcct({ name: "", username: "", password: "", classIds: [], phone: "", hireDate: "", email: "", address: "", emergencyContact: "", note: "" });
+      setNewAcct({ name: "", username: "", password: "", classIds: [], phone: "", hireDate: "", email: "", address: "", emergencyContact: "", note: "", shiftKey: "" });
       setAddingAccount(false);
       notify("\u5DF2\u65B0\u589E\u8001\u5E2B\u5E33\u865F");
     };
@@ -16229,6 +16601,16 @@
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "Email", value: draft.email, onChange: (v) => setDraft({ ...draft, email: v }), placeholder: "name@example.com" }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u901A\u8A0A\u5730\u5740", value: draft.address, onChange: (v) => setDraft({ ...draft, address: v }) }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u7DCA\u6025\u806F\u7D61\u4EBA", value: draft.emergencyContact, onChange: (v) => setDraft({ ...draft, emergencyContact: v }), placeholder: "\u59D3\u540D\uFF08\u95DC\u4FC2\uFF09\u96FB\u8A71" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...heading, fontSize: 12, fontWeight: 600, color: T.sub, marginBottom: 8 }, children: "\u73ED\u5225" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+            ChoiceGroup,
+            {
+              options: SHIFT_OPTIONS.map((s) => s.key),
+              labels: Object.fromEntries(SHIFT_OPTIONS.map((s) => [s.key, `${s.label} ${s.start}\u2013${s.end}`])),
+              value: draft.shiftKey,
+              onChange: (v) => setDraft({ ...draft, shiftKey: v })
+            }
+          ),
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u5B78\u6B77\uFF0F\u8B49\u7167", value: draft.note, onChange: (v) => setDraft({ ...draft, note: v }), textarea: true }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 8 }, children: [
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: save, icon: Save, full: true, children: "\u5132\u5B58" }),
@@ -16243,7 +16625,8 @@
                     email: account.email || "",
                     address: account.address || "",
                     emergencyContact: account.emergencyContact || "",
-                    note: account.note || ""
+                    note: account.note || "",
+                    shiftKey: account.shiftKey || ""
                   });
                   setEditing(false);
                 },
@@ -16284,7 +16667,25 @@
       !editing && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionTitle, { children: "\u672C\u65E5\u7C3D\u5230" }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(SectionCard, { style: { padding: "14px", marginBottom: 20 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 16 }, children: [
+          myShift && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 12, color: T.sub, marginBottom: 10, lineHeight: 1.6 }, children: [
+            "\u73ED\u5225\uFF1A",
+            myShift.label,
+            "\uFF08",
+            myShift.start,
+            "\u2013",
+            myShift.end,
+            "\uFF09",
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("br", {}),
+            "\u6392\u5B9A\u5DE5\u6642\uFF1A",
+            fmtHM(scheduledWorkMinutes(myShift, leavePeriod)),
+            "\uFF08",
+            leavePeriod === "am" || leavePeriod === "pm" ? "\u534A\u5929" : leavePeriod === "full" ? "\u5168\u5929\u8ACB\u5047" : "\u5168\u5929",
+            "\uFF09\u30FB\u56FA\u5B9A\u4F11\u606F\uFF1A",
+            myShift.breakStart,
+            "\u2013",
+            myShift.breakEnd
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 16, marginBottom: 12 }, children: [
             /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
               /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 11.5, color: T.sub, marginBottom: 3 }, children: "\u7C3D\u5230\u6642\u9593" }),
               /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...heading, fontWeight: 700, fontSize: 16, color: myTodayRec?.checkIn ? T.accentDeep : T.faint }, children: myTodayRec?.checkIn || "\u5C1A\u672A\u7C3D\u5230" })
@@ -16293,8 +16694,14 @@
               /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 11.5, color: T.sub, marginBottom: 3 }, children: "\u7C3D\u9000\u6642\u9593" }),
               /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...heading, fontWeight: 700, fontSize: 16, color: myTodayRec?.checkOut ? T.accentDeep : T.faint }, children: myTodayRec?.checkOut || "\u5C1A\u672A\u7C3D\u9000" })
             ] })
-          ] }) }),
-          approvedLeaveToday && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+          ] }),
+          workSummary && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 12, color: T.sub, marginBottom: 12, lineHeight: 1.6 }, children: [
+            "\u4ECA\u65E5\u51FA\u52E4\u5DF2\u5B8C\u6210\uFF0C\u5DE5\u6642\u4F9D\u6392\u5B9A\u73ED\u5225\u8A08\u7B97\uFF0C\u4E0D\u56E0\u63D0\u65E9\u6253\u5361\u800C\u589E\u52A0\u3002",
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("br", {}),
+            "\u4ECA\u65E5\u61C9\u8A08\u5DE5\u6642\uFF1A",
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { color: T.accentDeep, fontWeight: 700 }, children: fmtHM(workSummary.workMinutes) })
+          ] }),
+          isFullDayLeave && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
             "div",
             {
               style: {
@@ -16309,17 +16716,80 @@
               },
               children: [
                 /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AlertTriangle, { size: 15, color: T.roseDeep, style: { flexShrink: 0 } }),
-                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 12.5, color: T.roseDeep, lineHeight: 1.5 }, children: [
-                  "\u4ECA\u65E5\u8ACB\u5047\u4E2D\uFF08",
-                  approvedLeaveToday.leaveStart && approvedLeaveToday.leaveEnd ? `${approvedLeaveToday.leaveStart}\u2013${approvedLeaveToday.leaveEnd}` : "\u5168\u5929",
-                  "\uFF09\uFF0C\u66AB\u505C\u7C3D\u5230\uFF0F\u7C3D\u9000\u529F\u80FD"
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 12.5, color: T.roseDeep, lineHeight: 1.5 }, children: "\u4ECA\u65E5\u8ACB\u5047\u4E2D\uFF08\u5168\u5929\uFF09\uFF0C\u66AB\u505C\u7C3D\u5230\uFF0F\u7C3D\u9000\u529F\u80FD" })
+              ]
+            }
+          ),
+          !isFullDayLeave && (leavePeriod === "am" || leavePeriod === "pm") && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+            "div",
+            {
+              style: {
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                background: T.roseSoft,
+                border: "1px solid rgba(121,14,61,0.2)",
+                borderRadius: 10,
+                padding: "9px 11px",
+                marginBottom: 10
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AlertTriangle, { size: 15, color: T.roseDeep, style: { flexShrink: 0 } }),
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 12.5, color: T.roseDeep, lineHeight: 1.5 }, children: leavePeriod === "am" ? `\u4ECA\u65E5\u4E0A\u534A\u5929\u8ACB\u5047\uFF0C${myShift?.breakEnd || DEFAULT_BREAK_END} \u5F8C\u624D\u80FD\u7C3D\u5230` : `\u4ECA\u65E5\u4E0B\u534A\u5929\u8ACB\u5047\uFF0C${myShift?.breakStart || DEFAULT_BREAK_START} \u5F8C\u5373\u53EF\u7C3D\u9000` })
+              ]
+            }
+          ),
+          !isFullDayLeave && nextPunch === "checkIn" && !canCheckInNow && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+            "div",
+            {
+              style: {
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                background: T.amberSoft,
+                border: "1px solid rgba(201,138,0,0.3)",
+                borderRadius: 10,
+                padding: "9px 11px",
+                marginBottom: 10
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AlertTriangle, { size: 15, color: T.amber, style: { flexShrink: 0 } }),
+                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 12.5, color: T.amber, lineHeight: 1.5 }, children: [
+                  "\u5C1A\u672A\u5230\u53EF\u7C3D\u5230\u6642\u9593\uFF08",
+                  checkInFloor,
+                  "\uFF09\uFF0C\u8ACB\u65BC\u4E0B\u5348\u518D\u7C3D\u5230"
+                ] })
+              ]
+            }
+          ),
+          !isFullDayLeave && nextPunch === "checkOut" && !canCheckOutNow && checkOutFloor && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+            "div",
+            {
+              style: {
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                background: T.amberSoft,
+                border: "1px solid rgba(201,138,0,0.3)",
+                borderRadius: 10,
+                padding: "9px 11px",
+                marginBottom: 10
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AlertTriangle, { size: 15, color: T.amber, style: { flexShrink: 0 } }),
+                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 12.5, color: T.amber, lineHeight: 1.5 }, children: [
+                  "\u5C1A\u672A\u5230\u4E0B\u73ED\u6642\u9593\uFF08",
+                  checkOutFloor,
+                  "\uFF09\uFF0C\u7121\u6CD5\u63D0\u524D\u7C3D\u9000"
                 ] })
               ]
             }
           ),
           /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 8 }, children: [
-            approvedLeaveToday ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: () => {
-            }, full: true, children: "\u8ACB\u5047\u671F\u9593\u7121\u6CD5\u7C3D\u5230\u7C3D\u9000" }) : !myTodayRec?.checkIn ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: onCheckIn, icon: Check, full: true, children: "\u7C3D\u5230" }) : !myTodayRec?.checkOut ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: onCheckOut, tone: "rose", icon: Check, full: true, children: "\u7C3D\u9000" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: () => {
+            isFullDayLeave ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: () => {
+            }, full: true, children: "\u8ACB\u5047\u671F\u9593\u7121\u6CD5\u7C3D\u5230\u7C3D\u9000" }) : nextPunch === "checkIn" ? canCheckInNow ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: onPunch, icon: Check, full: true, children: "\u7C3D\u5230" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: () => {
+            }, full: true, children: `${checkInFloor} \u5F8C\u624D\u80FD\u7C3D\u5230` }) : nextPunch === "checkOut" ? canCheckOutNow ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: onPunch, tone: "rose", icon: Check, full: true, children: "\u7C3D\u9000" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: () => {
+            }, full: true, children: `${checkOutFloor} \u5F8C\u624D\u80FD\u7C3D\u9000` }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: () => {
             }, full: true, children: "\u4ECA\u65E5\u5DF2\u5B8C\u6210\u7C3D\u5230\u7C3D\u9000" }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconBtn, { icon: CalendarIcon, tone: "line", size: 44, onClick: () => setHistoryFor(account.username), title: "\u67E5\u770B\u6211\u7684\u7C3D\u5230\u7D00\u9304" })
           ] })
@@ -16331,6 +16801,7 @@
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(InfoRow, { icon: Megaphone, label: "Email", value: account.email || "\u672A\u8A2D\u5B9A" }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(InfoRow, { icon: Home, label: "\u901A\u8A0A\u5730\u5740", value: account.address || "\u672A\u8A2D\u5B9A" }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(InfoRow, { icon: AlertTriangle, label: "\u7DCA\u6025\u806F\u7D61\u4EBA", value: account.emergencyContact || "\u672A\u8A2D\u5B9A" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(InfoRow, { icon: CalendarIcon, label: "\u73ED\u5225", value: myShift ? `${myShift.label}\uFF08${myShift.start}\u2013${myShift.end}\uFF09` : "\u672A\u8A2D\u5B9A" }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(InfoRow, { icon: Pencil, label: "\u5B78\u6B77\uFF0F\u8B49\u7167", value: account.note || "\u672A\u8A2D\u5B9A", last: true })
         ] }),
         isPrincipal && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
@@ -16528,6 +16999,130 @@
               );
             })
           ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionTitle, { children: "\u8001\u5E2B\u6708\u6392\u73ED" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(SectionCard, { style: { padding: "13px 14px", marginBottom: 20 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 12.5, color: T.sub, marginBottom: 12, lineHeight: 1.5 }, children: "\u8001\u5E2B\u6BCF\u5929\u7684\u73ED\u5225\u53EF\u80FD\u4E0D\u540C\uFF0C\u9EDE\u9078\u65E5\u671F\u5373\u53EF\u6307\u6D3E\u7576\u5929\u73ED\u5225\uFF1B\u672A\u7279\u5225\u6307\u6D3E\u7684\u65E5\u5B50\u5957\u7528\u5E33\u865F\u9810\u8A2D\u73ED\u5225\u3002" }),
+            teacherAccounts.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 13, color: T.faint }, children: "\u9084\u6C92\u6709\u8001\u5E2B\u5E33\u865F" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, marginBottom: 12 }, children: teacherAccounts.map((a) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                "button",
+                {
+                  onClick: () => setScheduleTeacherUsername(a.username),
+                  style: {
+                    ...heading,
+                    fontWeight: 700,
+                    fontSize: 13,
+                    whiteSpace: "nowrap",
+                    padding: "7px 14px",
+                    borderRadius: 20,
+                    cursor: "pointer",
+                    flexShrink: 0,
+                    border: `1px solid ${(scheduleTeacherUsername || teacherAccounts[0].username) === a.username ? T.accent : T.line}`,
+                    background: (scheduleTeacherUsername || teacherAccounts[0].username) === a.username ? T.accentSoft : "#fff",
+                    color: (scheduleTeacherUsername || teacherAccounts[0].username) === a.username ? T.accentDeep : T.sub
+                  },
+                  children: a.name
+                },
+                a.username
+              )) }),
+              (() => {
+                const activeUsername = scheduleTeacherUsername || teacherAccounts[0].username;
+                const activeAcct = teacherAccounts.find((a) => a.username === activeUsername);
+                return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }, children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                      IconBtn,
+                      {
+                        icon: ChevronLeft,
+                        tone: "line",
+                        size: 28,
+                        onClick: () => setScheduleViewMonth((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1)),
+                        title: "\u4E0A\u500B\u6708"
+                      }
+                    ),
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { style: { ...heading, fontWeight: 700, fontSize: 14.5 }, children: [
+                      scheduleViewMonth.getFullYear(),
+                      " \u5E74 ",
+                      scheduleViewMonth.getMonth() + 1,
+                      " \u6708"
+                    ] }),
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                      IconBtn,
+                      {
+                        icon: ChevronRight,
+                        tone: "line",
+                        size: 28,
+                        onClick: () => setScheduleViewMonth((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1)),
+                        title: "\u4E0B\u500B\u6708"
+                      }
+                    )
+                  ] }),
+                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", marginBottom: 4 }, children: WEEKDAY_LABELS.map((w) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { textAlign: "center", fontSize: 10.5, color: T.faint, ...heading, fontWeight: 600, padding: "3px 0" }, children: w.slice(1) }, w)) }),
+                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", rowGap: 3 }, children: buildMonthGrid(scheduleViewMonth).map(({ date, inMonth }) => {
+                    const key = isoDate(date);
+                    const override = teacherSchedule[activeUsername]?.[key];
+                    const effShift = SHIFT_MAP[override || activeAcct.shiftKey];
+                    const isToday = key === todayKey;
+                    return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+                      "button",
+                      {
+                        onClick: () => inMonth && setScheduleDayFor(key),
+                        disabled: !inMonth,
+                        style: {
+                          ...heading,
+                          border: "none",
+                          borderRadius: 8,
+                          cursor: inMonth ? "pointer" : "default",
+                          background: "transparent",
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: "3px 0",
+                          gap: 1
+                        },
+                        children: [
+                          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                            "span",
+                            {
+                              style: {
+                                width: 20,
+                                height: 20,
+                                borderRadius: "50%",
+                                display: "grid",
+                                placeItems: "center",
+                                fontSize: 11.5,
+                                fontWeight: isToday ? 800 : 500,
+                                color: !inMonth ? T.faint : T.ink,
+                                boxShadow: isToday ? `inset 0 0 0 1.5px ${T.accent}` : "none"
+                              },
+                              children: date.getDate()
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                            "span",
+                            {
+                              style: {
+                                fontSize: 8.5,
+                                fontWeight: 700,
+                                padding: "1px 4px",
+                                borderRadius: 6,
+                                background: !inMonth ? "transparent" : override ? T.rose : T.accentSoft,
+                                color: !inMonth ? "transparent" : override ? "#fff" : T.accentDeep,
+                                visibility: inMonth && effShift ? "visible" : "hidden"
+                              },
+                              children: effShift ? effShift.label.slice(0, 1) : "\u2014"
+                            }
+                          )
+                        ]
+                      },
+                      key
+                    );
+                  }) }),
+                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 11, color: T.faint, marginTop: 8 }, children: "\u7C89\u7D05\u8272\u6A19\u7C64\uFF1D\u500B\u5225\u6307\u6D3E\u7576\u5929\u73ED\u5225\uFF1B\u6DFA\u85CD\u8272\u6A19\u7C64\uFF1D\u5957\u7528\u5E33\u865F\u9810\u8A2D\u73ED\u5225" })
+                ] });
+              })()
+            ] })
+          ] }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { marginBottom: 20 }, children: [
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionTitle, { children: "\u5712\u6240\u8A2D\u5B9A" }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionCard, { style: { padding: "13px 14px" }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
@@ -16613,6 +17208,16 @@
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "Email", value: newAcct.email, onChange: (v) => setNewAcct({ ...newAcct, email: v }), placeholder: "name@example.com" }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u901A\u8A0A\u5730\u5740", value: newAcct.address, onChange: (v) => setNewAcct({ ...newAcct, address: v }) }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u7DCA\u6025\u806F\u7D61\u4EBA", value: newAcct.emergencyContact, onChange: (v) => setNewAcct({ ...newAcct, emergencyContact: v }), placeholder: "\u59D3\u540D\uFF08\u95DC\u4FC2\uFF09\u96FB\u8A71" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...heading, fontSize: 12, fontWeight: 600, color: T.sub, marginBottom: 8 }, children: "\u73ED\u5225" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+              ChoiceGroup,
+              {
+                options: SHIFT_OPTIONS.map((s) => s.key),
+                labels: Object.fromEntries(SHIFT_OPTIONS.map((s) => [s.key, `${s.label} ${s.start}\u2013${s.end}`])),
+                value: newAcct.shiftKey,
+                onChange: (v) => setNewAcct({ ...newAcct, shiftKey: v })
+              }
+            ),
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u5B78\u6B77\uFF0F\u8B49\u7167", value: newAcct.note, onChange: (v) => setNewAcct({ ...newAcct, note: v }), textarea: true }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: addAccount, full: true, icon: UserPlus, children: "\u65B0\u589E\u5E33\u865F" })
           ] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
@@ -16626,6 +17231,16 @@
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "Email", value: acctDraft.email, onChange: (v) => setAcctDraft({ ...acctDraft, email: v }), placeholder: "name@example.com" }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u901A\u8A0A\u5730\u5740", value: acctDraft.address, onChange: (v) => setAcctDraft({ ...acctDraft, address: v }) }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u7DCA\u6025\u806F\u7D61\u4EBA", value: acctDraft.emergencyContact, onChange: (v) => setAcctDraft({ ...acctDraft, emergencyContact: v }), placeholder: "\u59D3\u540D\uFF08\u95DC\u4FC2\uFF09\u96FB\u8A71" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...heading, fontSize: 12, fontWeight: 600, color: T.sub, marginBottom: 8 }, children: "\u73ED\u5225" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+              ChoiceGroup,
+              {
+                options: SHIFT_OPTIONS.map((s) => s.key),
+                labels: Object.fromEntries(SHIFT_OPTIONS.map((s) => [s.key, `${s.label} ${s.start}\u2013${s.end}`])),
+                value: acctDraft.shiftKey,
+                onChange: (v) => setAcctDraft({ ...acctDraft, shiftKey: v })
+              }
+            ),
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "\u5B78\u6B77\uFF0F\u8B49\u7167", value: acctDraft.note, onChange: (v) => setAcctDraft({ ...acctDraft, note: v }), textarea: true }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 8 }, children: [
               /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: saveAccountEdit, icon: Save, full: true, children: "\u5132\u5B58" }),
@@ -16681,27 +17296,40 @@
       ] }),
       historyFor && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Sheet, { title: `${accounts.find((a) => a.username === historyFor)?.name || ""}\u30FB\u7C3D\u5230\u7D00\u9304`, onClose: () => setHistoryFor(null), children: (() => {
         const list = staffHistoryFor(historyFor);
+        const historyAccount = accounts.find((a) => a.username === historyFor);
         if (list.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(EmptyRow, { text: "\u9084\u6C92\u6709\u7C3D\u5230\u7D00\u9304" });
         return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "flex", flexDirection: "column", gap: 8 }, children: list.map(([date, rec]) => {
           const d = parseIsoLocal(date);
           const isToday = date === todayKey;
-          return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionCard, { style: { padding: "11px 14px" }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { style: { ...heading, fontWeight: 700, fontSize: 13.5 }, children: [
-                d.getFullYear(),
-                "/",
-                mdLabel(d),
-                " ",
-                WEEKDAY_LABELS[(d.getDay() + 6) % 7]
+          const historyShift = shiftForDate(historyAccount, date, teacherSchedule);
+          const leaveForDate = (approvals || []).find(
+            (a) => a.type === "leave" && a.status === "approved" && a.leaveDate === date && isOwnApproval(a, historyAccount)
+          );
+          const work = rec.checkIn && rec.checkOut ? scheduledWorkMinutes(historyShift, leaveForDate?.leavePeriod || null) : null;
+          return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(SectionCard, { style: { padding: "11px 14px" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { style: { ...heading, fontWeight: 700, fontSize: 13.5 }, children: [
+                  d.getFullYear(),
+                  "/",
+                  mdLabel(d),
+                  " ",
+                  WEEKDAY_LABELS[(d.getDay() + 6) % 7]
+                ] }),
+                isToday && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Tag, { children: "\u4ECA\u5929" })
               ] }),
-              isToday && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Tag, { children: "\u4ECA\u5929" })
+              /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 12.5, color: T.sub }, children: [
+                rec.checkIn || "\u2014",
+                " \uFF5E ",
+                rec.checkOut || "\u2014"
+              ] })
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 12.5, color: T.sub }, children: [
-              rec.checkIn || "\u2014",
-              " \uFF5E ",
-              rec.checkOut || "\u2014"
+            work != null && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 11.5, color: T.accentDeep }, children: [
+              "\u61C9\u8A08\u5DE5\u6642\uFF1A",
+              fmtHM(work),
+              "\uFF08\u4F9D\u6392\u5B9A\u73ED\u5225\u8A08\u7B97\uFF0C\u975E\u4F9D\u5BE6\u969B\u6253\u5361\u6642\u9593\uFF09"
             ] })
-          ] }) }, date);
+          ] }, date);
         }) });
       })() }),
       confirmDeleteAcct && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
@@ -16715,7 +17343,93 @@
             setConfirmDeleteAcct(null);
           }
         }
-      )
+      ),
+      scheduleDayFor && (() => {
+        const activeUsername = scheduleTeacherUsername || teacherAccounts[0]?.username;
+        const activeAcct = teacherAccounts.find((a) => a.username === activeUsername);
+        if (!activeAcct) return null;
+        const d = parseIsoLocal(scheduleDayFor);
+        const currentOverride = teacherSchedule[activeUsername]?.[scheduleDayFor] || "";
+        const setDayShift = (val) => {
+          setTeacherSchedule((prev) => {
+            const userSched = { ...prev[activeUsername] || {} };
+            if (!val) delete userSched[scheduleDayFor];
+            else userSched[scheduleDayFor] = val;
+            return { ...prev, [activeUsername]: userSched };
+          });
+          notify(val ? "\u5DF2\u6307\u6D3E\u7576\u5929\u73ED\u5225" : "\u5DF2\u6539\u56DE\u5957\u7528\u9810\u8A2D\u73ED\u5225");
+          setScheduleDayFor(null);
+        };
+        return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+          Sheet,
+          {
+            title: `${activeAcct.name}\u30FB${d.getFullYear()}/${mdLabel(d)} \u73ED\u5225`,
+            onClose: () => setScheduleDayFor(null),
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 12.5, color: T.sub, marginBottom: 14 }, children: [
+                "\u76EE\u524D\u5E33\u865F\u9810\u8A2D\u73ED\u5225\u70BA\u300C",
+                SHIFT_MAP[activeAcct.shiftKey]?.label || "\u672A\u8A2D\u5B9A",
+                "\u300D\uFF0C\u53EF\u70BA\u9019\u4E00\u5929\u55AE\u7368\u6307\u6D3E\u4E0D\u540C\u73ED\u5225\u3002"
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: 8 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+                  "button",
+                  {
+                    onClick: () => setDayShift(""),
+                    style: {
+                      ...heading,
+                      fontWeight: 700,
+                      fontSize: 13.5,
+                      padding: "11px 14px",
+                      borderRadius: 10,
+                      cursor: "pointer",
+                      textAlign: "left",
+                      border: `1px solid ${!currentOverride ? T.accent : T.line}`,
+                      background: !currentOverride ? T.accentSoft : "#fff",
+                      color: !currentOverride ? T.accentDeep : T.ink
+                    },
+                    children: [
+                      "\u5957\u7528\u5E33\u865F\u9810\u8A2D\u73ED\u5225",
+                      SHIFT_MAP[activeAcct.shiftKey] ? `\uFF08${SHIFT_MAP[activeAcct.shiftKey].label} ${SHIFT_MAP[activeAcct.shiftKey].start}\u2013${SHIFT_MAP[activeAcct.shiftKey].end}\uFF09` : ""
+                    ]
+                  }
+                ),
+                SHIFT_OPTIONS.map((s) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+                  "button",
+                  {
+                    onClick: () => setDayShift(s.key),
+                    style: {
+                      ...heading,
+                      fontWeight: 700,
+                      fontSize: 13.5,
+                      padding: "11px 14px",
+                      borderRadius: 10,
+                      cursor: "pointer",
+                      textAlign: "left",
+                      border: `1px solid ${currentOverride === s.key ? T.accent : T.line}`,
+                      background: currentOverride === s.key ? T.accentSoft : "#fff",
+                      color: currentOverride === s.key ? T.accentDeep : T.ink
+                    },
+                    children: [
+                      s.label,
+                      "\uFF08",
+                      s.start,
+                      "\u2013",
+                      s.end,
+                      "\uFF0C\u4F11\u606F ",
+                      s.breakStart,
+                      "\u2013",
+                      s.breakEnd,
+                      "\uFF09"
+                    ]
+                  },
+                  s.key
+                ))
+              ] })
+            ]
+          }
+        );
+      })()
     ] });
   }
   function InfoRow({ icon: Icon, label, value, last }) {
