@@ -13697,7 +13697,7 @@
     const [classJournals, setClassJournals] = (0, import_react.useState)({});
     const [staffAttendance, setStaffAttendance] = (0, import_react.useState)({});
     const [teacherSchedule, setTeacherSchedule] = (0, import_react.useState)({});
-    const staffPunch = (username) => {
+    const staffPunch = (username, field) => {
       const now = /* @__PURE__ */ new Date();
       const time = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
       const key = isoDate(now);
@@ -13713,27 +13713,37 @@
       setStaffAttendance((prev) => {
         const userRec = prev[username] || {};
         const dayRec = userRec[key] || {};
-        const field = !dayRec.checkIn ? "checkIn" : !dayRec.checkOut ? "checkOut" : null;
-        if (!field) return prev;
+        if (field === "checkIn" && dayRec.checkIn) {
+          blockedMsg = "\u4ECA\u65E5\u5DF2\u6253\u904E\u4E0A\u73ED\u5361";
+          return prev;
+        }
+        if (field === "checkOut" && !dayRec.checkIn) {
+          blockedMsg = "\u5C1A\u672A\u6253\u4E0A\u73ED\u5361\uFF0C\u7121\u6CD5\u6253\u4E0B\u73ED\u5361";
+          return prev;
+        }
+        if (field === "checkOut" && dayRec.checkOut) {
+          blockedMsg = "\u4ECA\u65E5\u5DF2\u6253\u904E\u4E0B\u73ED\u5361";
+          return prev;
+        }
         if (isDayOff) {
           blockedMsg = `\u4ECA\u5929\u6392\u5B9A\u70BA\u300C${DAYTYPE_LABEL[scheduleCode]}\u300D\uFF0C\u975E\u4E0A\u73ED\u65E5\uFF0C\u7121\u6CD5\u6253\u5361`;
           return prev;
         }
         if (isLeaveFullDay(shift, leaveToday)) {
-          blockedMsg = "\u4ECA\u65E5\u8ACB\u5047\u4E2D\uFF0C\u66AB\u505C\u7C3D\u5230\uFF0F\u7C3D\u9000\u529F\u80FD";
+          blockedMsg = "\u4ECA\u65E5\u8ACB\u5047\u4E2D\uFF0C\u66AB\u505C\u4E0A\u73ED\uFF0F\u4E0B\u73ED\u6253\u5361\u529F\u80FD";
           return prev;
         }
         if (field === "checkIn") {
           const floor = leaveCheckInFloor(shift, leaveToday);
           if (floor && time < floor) {
-            blockedMsg = `\u5C1A\u672A\u5230\u53EF\u7C3D\u5230\u6642\u9593\uFF08${floor}\uFF09`;
+            blockedMsg = `\u5C1A\u672A\u5230\u53EF\u4E0A\u73ED\u6642\u9593\uFF08${floor}\uFF09`;
             return prev;
           }
         }
         if (field === "checkOut") {
           const floor = leaveCheckOutFloor(shift, leaveToday);
           if (floor && time < floor) {
-            blockedMsg = `\u5C1A\u672A\u5230\u4E0B\u73ED\u6642\u9593\uFF08${floor}\uFF09\uFF0C\u7121\u6CD5\u63D0\u524D\u7C3D\u9000`;
+            blockedMsg = `\u5C1A\u672A\u5230\u4E0B\u73ED\u6642\u9593\uFF08${floor}\uFF09\uFF0C\u7121\u6CD5\u63D0\u524D\u4E0B\u73ED\u6253\u5361`;
             return prev;
           }
         }
@@ -13743,7 +13753,7 @@
       if (blockedMsg) {
         notify(blockedMsg);
       } else if (punched) {
-        notify(`\u5DF2${punched === "checkIn" ? "\u7C3D\u5230" : "\u7C3D\u9000"}\u30FB${time}`);
+        notify(`\u5DF2${punched === "checkIn" ? "\u4E0A\u73ED" : "\u4E0B\u73ED"}\u6253\u5361\u30FB${time}`);
       }
     };
     const [approvals, setApprovals] = (0, import_react.useState)(seedApprovals);
@@ -13933,7 +13943,8 @@
                   onCredentialsChanged: updateSessionUsername,
                   staffAttendance,
                   setStaffAttendance,
-                  onPunch: () => staffPunch(account.username),
+                  onCheckIn: () => staffPunch(account.username, "checkIn"),
+                  onCheckOut: () => staffPunch(account.username, "checkOut"),
                   studentsByClass,
                   attendance,
                   journals,
@@ -16413,7 +16424,7 @@
       ] })
     ] });
   }
-  function MeTab({ account, accounts, setAccounts, classes, schoolName, setSchoolName, notifOn, setNotifOn, notify, onLogout, onCredentialsChanged, staffAttendance, setStaffAttendance, onPunch, studentsByClass, attendance, journals, approvals, teacherSchedule, setTeacherSchedule }) {
+  function MeTab({ account, accounts, setAccounts, classes, schoolName, setSchoolName, notifOn, setNotifOn, notify, onLogout, onCredentialsChanged, staffAttendance, setStaffAttendance, onCheckIn, onCheckOut, studentsByClass, attendance, journals, approvals, teacherSchedule, setTeacherSchedule }) {
     const renameStaffAttendanceKey = (oldUsername, newUsername) => {
       if (oldUsername === newUsername) return;
       setStaffAttendance((prev) => {
@@ -16460,6 +16471,29 @@
     const checkOutFloor = leaveCheckOutFloor(myShift, approvedLeaveToday);
     const canCheckOutNow = !checkOutFloor || nowHM() >= checkOutFloor;
     const [historyFor, setHistoryFor] = (0, import_react.useState)(null);
+    const [editPunchFor, setEditPunchFor] = (0, import_react.useState)(null);
+    const [editPunchDraft, setEditPunchDraft] = (0, import_react.useState)({ checkIn: "", checkOut: "", note: "" });
+    const saveEditPunch = () => {
+      const timePattern = /^([01]\d|2[0-3]):([0-5]\d)$/;
+      if (editPunchDraft.checkIn && !timePattern.test(editPunchDraft.checkIn)) return notify("\u4E0A\u73ED\u6642\u9593\u683C\u5F0F\u932F\u8AA4\uFF0C\u8ACB\u7528 HH:MM");
+      if (editPunchDraft.checkOut && !timePattern.test(editPunchDraft.checkOut)) return notify("\u4E0B\u73ED\u6642\u9593\u683C\u5F0F\u932F\u8AA4\uFF0C\u8ACB\u7528 HH:MM");
+      if (!editPunchDraft.note.trim()) return notify("\u8ACB\u586B\u5BEB\u4FEE\u6B63\u8AAA\u660E");
+      setStaffAttendance((prev) => {
+        const userRec = { ...prev[editPunchFor.username] || {} };
+        const dayRec = { ...userRec[editPunchFor.date] || {} };
+        if (editPunchDraft.checkIn.trim()) dayRec.checkIn = editPunchDraft.checkIn.trim();
+        else delete dayRec.checkIn;
+        if (editPunchDraft.checkOut.trim()) dayRec.checkOut = editPunchDraft.checkOut.trim();
+        else delete dayRec.checkOut;
+        dayRec.correctionNote = editPunchDraft.note.trim();
+        dayRec.correctedBy = account.name;
+        dayRec.correctedAt = `${isoDate(/* @__PURE__ */ new Date())} ${nowHM()}`;
+        userRec[editPunchFor.date] = dayRec;
+        return { ...prev, [editPunchFor.username]: userRec };
+      });
+      notify("\u5DF2\u4FEE\u6B63\u6253\u5361\u7D00\u9304");
+      setEditPunchFor(null);
+    };
     const staffHistoryFor = (username) => Object.entries(staffAttendance[username] || {}).filter(([, rec]) => rec.checkIn || rec.checkOut).sort(([a], [b]) => a < b ? 1 : -1);
     const exportStaffAttendance = () => {
       const rows = [[
@@ -16476,7 +16510,10 @@
         "\u51FA\u52E4\u72C0\u614B",
         "\u9072\u5230\u5206\u9418",
         "\u65E9\u9000\u5206\u9418",
-        "\u61C9\u8A08\u5DE5\u4F5C\u6642\u6578\uFF08\u5206\uFF09"
+        "\u61C9\u8A08\u5DE5\u4F5C\u6642\u6578\uFF08\u5206\uFF09",
+        "\u5712\u9577\u4FEE\u6B63\u8AAA\u660E",
+        "\u4FEE\u6B63\u4EBA",
+        "\u4FEE\u6B63\u6642\u9593"
       ]];
       accounts.forEach((a) => {
         const defaultShift = SHIFT_MAP[a.shiftKey];
@@ -16485,7 +16522,7 @@
         if (dates.length === 0) {
           const shiftLabel = defaultShift ? `${defaultShift.label}\uFF08${defaultShift.start}\u2013${defaultShift.end}\uFF09` : "";
           const breakLabel = defaultShift ? `${defaultShift.breakStart}\u2013${defaultShift.breakEnd}` : "";
-          rows.push([a.name, ROLE_LABEL[a.role], a.username, shiftLabel, "", "", "", "", breakLabel, "", "", "", "", ""]);
+          rows.push([a.name, ROLE_LABEL[a.role], a.username, shiftLabel, "", "", "", "", breakLabel, "", "", "", "", "", "", "", ""]);
         } else {
           dates.forEach((d) => {
             const r = recs[d];
@@ -16513,7 +16550,10 @@
               info ? ATTENDANCE_STATUS_LABEL(info) : "",
               info?.lateMinutes || "",
               info?.earlyMinutes || "",
-              workMin
+              workMin,
+              r.correctionNote || "",
+              r.correctedBy || "",
+              r.correctedAt || ""
             ]);
           });
         }
@@ -16881,12 +16921,12 @@
           ] }),
           /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 16, marginBottom: 12 }, children: [
             /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 11.5, color: T.sub, marginBottom: 3 }, children: "\u7C3D\u5230\u6642\u9593" }),
-              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...heading, fontWeight: 700, fontSize: 16, color: myTodayRec?.checkIn ? T.accentDeep : T.faint }, children: myTodayRec?.checkIn || "\u5C1A\u672A\u7C3D\u5230" })
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 11.5, color: T.sub, marginBottom: 3 }, children: "\u4E0A\u73ED\u6642\u9593" }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...heading, fontWeight: 700, fontSize: 16, color: myTodayRec?.checkIn ? T.accentDeep : T.faint }, children: myTodayRec?.checkIn || "\u5C1A\u672A\u4E0A\u73ED" })
             ] }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 11.5, color: T.sub, marginBottom: 3 }, children: "\u7C3D\u9000\u6642\u9593" }),
-              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...heading, fontWeight: 700, fontSize: 16, color: myTodayRec?.checkOut ? T.accentDeep : T.faint }, children: myTodayRec?.checkOut || "\u5C1A\u672A\u7C3D\u9000" })
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 11.5, color: T.sub, marginBottom: 3 }, children: "\u4E0B\u73ED\u6642\u9593" }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...heading, fontWeight: 700, fontSize: 16, color: myTodayRec?.checkOut ? T.accentDeep : T.faint }, children: myTodayRec?.checkOut || "\u5C1A\u672A\u4E0B\u73ED" })
             ] })
           ] }),
           todayAttendanceInfo && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 12, color: T.sub, marginBottom: 12, lineHeight: 1.7 }, children: [
@@ -16970,9 +17010,9 @@
               children: [
                 /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AlertTriangle, { size: 15, color: T.amber, style: { flexShrink: 0 } }),
                 /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 12.5, color: T.amber, lineHeight: 1.5 }, children: [
-                  "\u5C1A\u672A\u5230\u53EF\u7C3D\u5230\u6642\u9593\uFF08",
+                  "\u5C1A\u672A\u5230\u53EF\u4E0A\u73ED\u6642\u9593\uFF08",
                   checkInFloor,
-                  "\uFF09\uFF0C\u8ACB\u65BC\u4E0B\u5348\u518D\u7C3D\u5230"
+                  "\uFF09\uFF0C\u8ACB\u65BC\u4E0B\u5348\u518D\u6253\u5361"
                 ] })
               ]
             }
@@ -16995,20 +17035,23 @@
                 /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 12.5, color: T.amber, lineHeight: 1.5 }, children: [
                   "\u5C1A\u672A\u5230\u4E0B\u73ED\u6642\u9593\uFF08",
                   checkOutFloor,
-                  "\uFF09\uFF0C\u7121\u6CD5\u63D0\u524D\u7C3D\u9000"
+                  "\uFF09\uFF0C\u7121\u6CD5\u63D0\u524D\u4E0B\u73ED\u6253\u5361"
                 ] })
               ]
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 8 }, children: [
-            isDayOffToday ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: () => {
-            }, full: true, children: `${DAYTYPE_LABEL[myScheduleCode]}\u7576\u5929\u7121\u6CD5\u7C3D\u5230\u7C3D\u9000` }) : isFullDayLeave ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: () => {
-            }, full: true, children: "\u8ACB\u5047\u671F\u9593\u7121\u6CD5\u7C3D\u5230\u7C3D\u9000" }) : nextPunch === "checkIn" ? canCheckInNow ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: onPunch, icon: Check, full: true, children: "\u7C3D\u5230" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: () => {
-            }, full: true, children: `${checkInFloor} \u5F8C\u624D\u80FD\u7C3D\u5230` }) : nextPunch === "checkOut" ? canCheckOutNow ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: onPunch, tone: "rose", icon: Check, full: true, children: "\u7C3D\u9000" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: () => {
-            }, full: true, children: `${checkOutFloor} \u5F8C\u624D\u80FD\u7C3D\u9000` }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: () => {
-            }, full: true, children: "\u4ECA\u65E5\u5DF2\u5B8C\u6210\u7C3D\u5230\u7C3D\u9000" }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconBtn, { icon: CalendarIcon, tone: "line", size: 44, onClick: () => setHistoryFor(account.username), title: "\u67E5\u770B\u6211\u7684\u7C3D\u5230\u7D00\u9304" })
-          ] })
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "flex", gap: 8, marginBottom: 8 }, children: isDayOffToday ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: () => {
+          }, full: true, children: `${DAYTYPE_LABEL[myScheduleCode]}\u7576\u5929\u7121\u6CD5\u6253\u5361` }) : isFullDayLeave ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: () => {
+          }, full: true, children: "\u8ACB\u5047\u671F\u9593\u7121\u6CD5\u6253\u5361" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+            myTodayRec?.checkIn ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: () => {
+            }, full: true, children: `\u5DF2\u4E0A\u73ED ${myTodayRec.checkIn}` }) : canCheckInNow ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: onCheckIn, icon: Check, full: true, children: "\u4E0A\u73ED" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: () => {
+            }, full: true, children: `${checkInFloor} \u5F8C\u624D\u80FD\u4E0A\u73ED` }),
+            myTodayRec?.checkOut ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: () => {
+            }, full: true, children: `\u5DF2\u4E0B\u73ED ${myTodayRec.checkOut}` }) : !myTodayRec?.checkIn ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: () => {
+            }, full: true, children: "\u5C1A\u672A\u4E0A\u73ED\u6253\u5361" }) : canCheckOutNow ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: onCheckOut, tone: "rose", icon: Check, full: true, children: "\u4E0B\u73ED" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GhostBtn, { onClick: () => {
+            }, full: true, children: `${checkOutFloor} \u5F8C\u624D\u80FD\u4E0B\u73ED` })
+          ] }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { display: "flex", justifyContent: "flex-end" }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconBtn, { icon: CalendarIcon, tone: "line", size: 44, onClick: () => setHistoryFor(account.username), title: "\u67E5\u770B\u6211\u7684\u7C3D\u5230\u7D00\u9304" }) })
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(SectionCard, { style: { overflow: "hidden", marginBottom: 16 }, children: [
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(InfoRow, { icon: Phone, label: "\u806F\u7D61\u96FB\u8A71", value: account.phone || "\u672A\u8A2D\u5B9A" }),
@@ -17543,10 +17586,25 @@
                 ] }),
                 isToday && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Tag, { children: "\u4ECA\u5929" })
               ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 12.5, color: T.sub }, children: [
-                rec.checkIn || "\u2014",
-                " \uFF5E ",
-                rec.checkOut || "\u2014"
+              /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { style: { fontSize: 12.5, color: T.sub }, children: [
+                  rec.checkIn || "\u2014",
+                  " \uFF5E ",
+                  rec.checkOut || "\u2014"
+                ] }),
+                isPrincipal && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                  IconBtn,
+                  {
+                    icon: Pencil,
+                    size: 22,
+                    tone: "line",
+                    title: "\u4FEE\u6B63\u6253\u5361",
+                    onClick: () => {
+                      setEditPunchDraft({ checkIn: rec.checkIn || "", checkOut: rec.checkOut || "", note: "" });
+                      setEditPunchFor({ username: historyFor, date });
+                    }
+                  }
+                )
               ] })
             ] }),
             info && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
@@ -17561,10 +17619,72 @@
                   work != null && `\u30FB\u61C9\u8A08\u5DE5\u6642 ${fmtHM(work)}`
                 ]
               }
-            )
+            ),
+            rec.correctionNote && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 11, color: T.sub, marginTop: 4, lineHeight: 1.5 }, children: [
+              "\u5DF2\u7531\u5712\u9577\u4FEE\u6B63\uFF1A",
+              rec.correctionNote,
+              "\uFF08",
+              rec.correctedBy,
+              "\u30FB",
+              rec.correctedAt,
+              "\uFF09"
+            ] })
           ] }, date);
         }) });
       })() }),
+      editPunchFor && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+        Sheet,
+        {
+          title: `${accounts.find((a) => a.username === editPunchFor.username)?.name || ""}\u30FB${mdLabel(parseIsoLocal(editPunchFor.date))} \u4FEE\u6B63\u6253\u5361`,
+          onClose: () => setEditPunchFor(null),
+          children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 12.5, color: T.sub, marginBottom: 14, lineHeight: 1.5 }, children: "\u4F9B\u5712\u9577\u4E8B\u5F8C\u4FEE\u6B63\u54E1\u5DE5\u4E0D\u5C0F\u5FC3\u63D0\u524D\u6253\u5361\u3001\u5FD8\u8A18\u6253\u5361\u7B49\u72C0\u6CC1\u3002\u7559\u7A7A\u5373\u4EE3\u8868\u6E05\u9664\u8A72\u7B46\u6253\u5361\u7D00\u9304\u3002" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+              Field,
+              {
+                label: "\u4E0A\u73ED\u6642\u9593",
+                value: editPunchDraft.checkIn,
+                onChange: (v) => setEditPunchDraft({ ...editPunchDraft, checkIn: v }),
+                placeholder: "HH:MM\uFF0C\u4F8B\u5982 08:00"
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+              Field,
+              {
+                label: "\u4E0B\u73ED\u6642\u9593",
+                value: editPunchDraft.checkOut,
+                onChange: (v) => setEditPunchDraft({ ...editPunchDraft, checkOut: v }),
+                placeholder: "HH:MM\uFF0C\u4F8B\u5982 17:30"
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+              Field,
+              {
+                label: "\u4FEE\u6B63\u8AAA\u660E\uFF08\u5FC5\u586B\uFF09",
+                value: editPunchDraft.note,
+                onChange: (v) => setEditPunchDraft({ ...editPunchDraft, note: v }),
+                placeholder: "\u4F8B\u5982\uFF1A\u54E1\u5DE5\u4E0D\u5C0F\u5FC3\u63D0\u524D\u6253\u4E0B\u73ED\u5361\uFF0C\u7D93\u78BA\u8A8D\u5F8C\u6539\u56DE\u6B63\u78BA\u6642\u9593",
+                textarea: true
+              }
+            ),
+            (() => {
+              const existing = staffAttendance[editPunchFor.username]?.[editPunchFor.date];
+              if (!existing?.correctionNote) return null;
+              return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 11.5, color: T.sub, marginBottom: 14, lineHeight: 1.5, background: T.bg, borderRadius: 8, padding: "8px 10px" }, children: [
+                "\u4E0A\u6B21\u4FEE\u6B63\uFF1A",
+                existing.correctionNote,
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("br", {}),
+                "\uFF08",
+                existing.correctedBy,
+                " \u30FB",
+                existing.correctedAt,
+                "\uFF09"
+              ] });
+            })(),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrimaryBtn, { onClick: saveEditPunch, icon: Save, full: true, children: "\u5132\u5B58\u4FEE\u6B63" })
+          ]
+        }
+      ),
       confirmDeleteAcct && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
         ConfirmDialog,
         {
