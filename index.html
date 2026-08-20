@@ -13036,6 +13036,12 @@
     }
     return shift.workMinutes;
   };
+  var actualAttendanceMinutes = (scheduledMinutes, info) => {
+    if (scheduledMinutes == null) return null;
+    const lateMinutes = info?.lateMinutes || 0;
+    const earlyMinutes = info?.earlyMinutes || 0;
+    return Math.max(0, scheduledMinutes - lateMinutes - earlyMinutes);
+  };
   var nowHM = () => {
     const d = /* @__PURE__ */ new Date();
     return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -16465,7 +16471,10 @@
     const isFullDayLeave = isLeaveFullDay(myShift, approvedLeaveToday);
     const nextPunch = !myTodayRec?.checkIn ? "checkIn" : !myTodayRec?.checkOut ? "checkOut" : null;
     const todayAttendanceInfo = attendanceStatusForDay(myShift, myTodayRec?.checkIn, myTodayRec?.checkOut, approvedLeaveToday);
-    const workSummary = myTodayRec?.checkIn && myTodayRec?.checkOut ? { workMinutes: scheduledWorkMinutes(myShift, approvedLeaveToday) } : null;
+    const workSummary = myTodayRec?.checkIn && myTodayRec?.checkOut ? {
+      workMinutes: scheduledWorkMinutes(myShift, approvedLeaveToday),
+      actualMinutes: actualAttendanceMinutes(scheduledWorkMinutes(myShift, approvedLeaveToday), todayAttendanceInfo)
+    } : null;
     const checkInFloor = leaveCheckInFloor(myShift, approvedLeaveToday);
     const canCheckInNow = !checkInFloor || nowHM() >= checkInFloor;
     const checkOutFloor = leaveCheckOutFloor(myShift, approvedLeaveToday);
@@ -16510,7 +16519,8 @@
         "\u51FA\u52E4\u72C0\u614B",
         "\u9072\u5230\u5206\u9418",
         "\u65E9\u9000\u5206\u9418",
-        "\u61C9\u8A08\u5DE5\u4F5C\u6642\u6578\uFF08\u5206\uFF09",
+        "\u6B63\u5E38\u5DE5\u6642\uFF08\u5206\uFF09",
+        "\u5BE6\u969B\u5230\u5EA7\u5DE5\u6642\uFF08\u5206\uFF09",
         "\u5712\u9577\u4FEE\u6B63\u8AAA\u660E",
         "\u4FEE\u6B63\u4EBA",
         "\u4FEE\u6B63\u6642\u9593"
@@ -16522,7 +16532,7 @@
         if (dates.length === 0) {
           const shiftLabel = defaultShift ? `${defaultShift.label}\uFF08${defaultShift.start}\u2013${defaultShift.end}\uFF09` : "";
           const breakLabel = defaultShift ? `${defaultShift.breakStart}\u2013${defaultShift.breakEnd}` : "";
-          rows.push([a.name, ROLE_LABEL[a.role], a.username, shiftLabel, "", "", "", "", breakLabel, "", "", "", "", "", "", "", ""]);
+          rows.push([a.name, ROLE_LABEL[a.role], a.username, shiftLabel, "", "", "", "", breakLabel, "", "", "", "", "", "", "", "", ""]);
         } else {
           dates.forEach((d) => {
             const r = recs[d];
@@ -16536,6 +16546,7 @@
             const leavePeriodLabel = leaveForDate ? leaveForDate.leavePeriod === "custom" ? `${leaveForDate.customStart}\u2013${leaveForDate.customEnd}` : LEAVE_PERIOD_LABEL[leaveForDate.leavePeriod] : "\u7121";
             const workMin = r.checkIn && r.checkOut ? scheduledWorkMinutes(shift, leaveForDate) : "";
             const info = attendanceStatusForDay(shift, r.checkIn, r.checkOut, leaveForDate);
+            const actualMin = workMin !== "" ? actualAttendanceMinutes(workMin, info) : "";
             rows.push([
               a.name,
               ROLE_LABEL[a.role],
@@ -16551,6 +16562,7 @@
               info?.lateMinutes || "",
               info?.earlyMinutes || "",
               workMin,
+              actualMin,
               r.correctionNote || "",
               r.correctedBy || "",
               r.correctedAt || ""
@@ -16943,8 +16955,13 @@
             ),
             workSummary && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
               /* @__PURE__ */ (0, import_jsx_runtime.jsx)("br", {}),
-              "\u4ECA\u65E5\u61C9\u8A08\u5DE5\u6642\uFF1A",
-              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { color: T.accentDeep, fontWeight: 700 }, children: fmtHM(workSummary.workMinutes) })
+              "\u4ECA\u65E5\u6B63\u5E38\u5DE5\u6642\uFF1A",
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { color: T.accentDeep, fontWeight: 700 }, children: fmtHM(workSummary.workMinutes) }),
+              workSummary.actualMinutes !== workSummary.workMinutes && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("br", {}),
+                "\u5BE6\u969B\u5230\u5EA7\u5DE5\u6642\uFF08\u5DF2\u6263\u9664\u9072\u5230\u65E9\u9000\uFF09\uFF1A",
+                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { color: T.amber, fontWeight: 700 }, children: fmtHM(workSummary.actualMinutes) })
+              ] })
             ] }),
             todayAttendanceInfo.status === "offDayPunch" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
               /* @__PURE__ */ (0, import_jsx_runtime.jsx)("br", {}),
@@ -17574,6 +17591,7 @@
           );
           const work = rec.checkIn && rec.checkOut ? scheduledWorkMinutes(historyShift, leaveForDate) : null;
           const info = attendanceStatusForDay(historyShift, rec.checkIn, rec.checkOut, leaveForDate);
+          const actualWork = actualAttendanceMinutes(work, info);
           return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(SectionCard, { style: { padding: "11px 14px" }, children: [
             /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }, children: [
               /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
@@ -17616,7 +17634,8 @@
                 },
                 children: [
                   ATTENDANCE_STATUS_LABEL(info),
-                  work != null && `\u30FB\u61C9\u8A08\u5DE5\u6642 ${fmtHM(work)}`
+                  work != null && `\u30FB\u6B63\u5E38\u5DE5\u6642 ${fmtHM(work)}`,
+                  work != null && actualWork !== work && `\u30FB\u5BE6\u969B\u5230\u5EA7 ${fmtHM(actualWork)}`
                 ]
               }
             ),
